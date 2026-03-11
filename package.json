@@ -1,0 +1,13 @@
+{
+  "name": "pool_league",
+  "version": "1.0.0",
+  "description": "Pool league tracker with ELO ratings",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "private": true
+}

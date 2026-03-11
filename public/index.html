@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pool League</title>
+  <link rel="stylesheet" href="/css/main.css" />
+  <link rel="stylesheet" href="/css/index.css" />
+</head>
+<body>
+
+<header>
+  <h1>🎱 Pool League</h1>
+  <p>ELO-rated leaderboard — track every game, rank every player</p>
+</header>
+
+<div class="layout">
+
+  <!-- League Table -->
+  <div class="card" id="league-card">
+    <h2><span class="icon">🏆</span> League Table</h2>
+    <div id="league-table-wrap">
+      <div class="empty-state"><span class="spinner"></span></div>
+    </div>
+  </div>
+
+  <!-- Record a Game -->
+  <div class="card">
+    <h2><span class="icon">🎯</span> Record a Game</h2>
+    <div class="form-row">
+      <select id="winner-select">
+        <option value="">🏆 Winner…</option>
+      </select>
+      <select id="loser-select">
+        <option value="">💀 Loser…</option>
+      </select>
+    </div>
+    <div class="form-row" style="margin-top:10px;">
+      <button class="btn" id="record-btn" onclick="recordGame()">Submit Result</button>
+    </div>
+    <div class="msg" id="game-msg"></div>
+  </div>
+
+  <!-- Add Player -->
+  <div class="card">
+    <h2><span class="icon">➕</span> Add Player</h2>
+    <div class="form-row">
+      <input type="text" id="new-player-name" placeholder="Player name…" maxlength="40"
+             onkeydown="if(event.key==='Enter') addPlayer()" />
+      <button class="btn" onclick="addPlayer()">Add</button>
+    </div>
+    <div class="msg" id="player-msg"></div>
+  </div>
+
+  <!-- Game History -->
+  <div class="card" id="history-card">
+    <h2><span class="icon">📋</span> Recent Games</h2>
+    <div class="history-list" id="history-list">
+      <div class="empty-state"><span class="spinner"></span></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="/js/index.js"></script>
+</body>
+</html>
+
