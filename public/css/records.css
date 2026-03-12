@@ -42,8 +42,17 @@ header p {
   gap: 20px;
 }
 
+/* 5th card sits alone on its row — centre it by spanning both columns */
+.records-grid .record-card:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+  max-width: 420px;
+  justify-self: center;
+  width: 100%;
+}
+
 @media (max-width: 540px) {
   .records-grid { grid-template-columns: 1fr; }
+  .records-grid .record-card:last-child:nth-child(odd) { max-width: 100%; }
 }
 
 .record-card {
@@ -93,6 +102,12 @@ header p {
 .holder-sep {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.upset-sep {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin: 0 5px;
 }
 
 .player-link {

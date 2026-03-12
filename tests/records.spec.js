@@ -38,9 +38,9 @@ test.describe('Records Page — Layout', () => {
     await expect(backLink).toHaveAttribute('href', /\//);
   });
 
-  test('shows four record cards', async ({ page }) => {
+  test('shows six record cards', async ({ page }) => {
     await gotoRecords(page);
-    await expect(page.locator('.record-card')).toHaveCount(4);
+    await expect(page.locator('.record-card')).toHaveCount(6);
   });
 });
 
@@ -48,6 +48,17 @@ test.describe('Records Page — Content', () => {
   test('Longest Winning Streak card is shown', async ({ page }) => {
     await gotoRecords(page);
     await expect(page.locator('.record-card', { hasText: 'Longest Winning Streak' })).toBeVisible();
+  });
+
+  test('Longest Active Streak card is shown', async ({ page }) => {
+    await gotoRecords(page);
+    await expect(page.locator('.record-card', { hasText: 'Longest Active Streak' })).toBeVisible();
+  });
+
+  test('Alice is shown as active streak holder (she won the last game)', async ({ page }) => {
+    await gotoRecords(page);
+    const card = page.locator('.record-card', { hasText: 'Longest Active Streak' });
+    await expect(card).toContainText('Alice');
   });
 
   test('Most Games Played card is shown', async ({ page }) => {
@@ -63,6 +74,11 @@ test.describe('Records Page — Content', () => {
   test('Highest Ever ELO card is shown', async ({ page }) => {
     await gotoRecords(page);
     await expect(page.locator('.record-card', { hasText: 'Highest Ever ELO' })).toBeVisible();
+  });
+
+  test('Biggest Upset card is shown', async ({ page }) => {
+    await gotoRecords(page);
+    await expect(page.locator('.record-card', { hasText: 'Biggest Upset' })).toBeVisible();
   });
 
   test('Alice is shown as record holder for longest win streak', async ({ page }) => {
@@ -94,12 +110,58 @@ test.describe('Records Page — Content', () => {
 
   test('clicking record holder link navigates to player profile', async ({ page }) => {
     await gotoRecords(page);
-    // Alice is the sole holder of Longest Winning Streak — click her link there
     const card = page.locator('.record-card', { hasText: 'Longest Winning Streak' });
     const link = card.locator('.player-link', { hasText: 'Alice' });
     await link.click();
     await page.waitForSelector('.hero', { timeout: 10_000 });
     await expect(page.locator('.hero-name')).toContainText('Alice');
+  });
+
+  test('Biggest Upset card shows — when no upset has occurred', async ({ page }) => {
+    // In this league Alice beat Bob 3 times from equal ratings — diff is always 0
+    await gotoRecords(page);
+    const card = page.locator('.record-card', { hasText: 'Biggest Upset' });
+    await expect(card.locator('.record-value')).toContainText('—');
+  });
+
+  test('Biggest Upset card shows winner and loser names when an upset has occurred', async ({ request, page }) => {
+    const ul = await createTestLeague(request, '_upsetui');
+    const ua = await addPlayer(request, ul, 'Underdog');
+    const ub = await addPlayer(request, ul, 'Favourite');
+    // Build Favourite's rating up
+    await recordGame(request, ul, ub.id, ua.id);
+    await recordGame(request, ul, ub.id, ua.id);
+    await recordGame(request, ul, ub.id, ua.id);
+    // Now Underdog beats Favourite — an upset
+    await recordGame(request, ul, ua.id, ub.id);
+
+    await page.goto(`${BASE}/`);
+    await page.evaluate(l => localStorage.setItem('currentLeague', l), ul);
+    await page.goto(`${BASE}/records.html`);
+    await page.waitForSelector('.records-grid', { timeout: 10_000 });
+
+    const card = page.locator('.record-card', { hasText: 'Biggest Upset' });
+    await expect(card).toContainText('Underdog');
+    await expect(card).toContainText('Favourite');
+    await expect(card.locator('.record-value')).not.toContainText('—');
+  });
+
+  test('Biggest Upset winner name is a link to their profile', async ({ request, page }) => {
+    const ul = await createTestLeague(request, '_upsetlink');
+    const ua = await addPlayer(request, ul, 'Underdog');
+    const ub = await addPlayer(request, ul, 'Favourite');
+    await recordGame(request, ul, ub.id, ua.id);
+    await recordGame(request, ul, ub.id, ua.id);
+    await recordGame(request, ul, ua.id, ub.id);
+
+    await page.goto(`${BASE}/`);
+    await page.evaluate(l => localStorage.setItem('currentLeague', l), ul);
+    await page.goto(`${BASE}/records.html`);
+    await page.waitForSelector('.records-grid', { timeout: 10_000 });
+
+    const card = page.locator('.record-card', { hasText: 'Biggest Upset' });
+    const link = card.locator('.player-link', { hasText: 'Underdog' });
+    await expect(link).toHaveAttribute('href', /player\.html/);
   });
 });
 

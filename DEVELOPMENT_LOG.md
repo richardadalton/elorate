@@ -100,7 +100,7 @@ A badges/achievements system was designed and implemented to reward player miles
 | **Seasoned** (50 Games Played) | Play 50 games |
 | **Centurion** (100 Games Played) | Play 100 games |
 | **Record Holder** | Hold at least one all-time record *(originally named "Record Breaker")* |
-| **Grand Slam** | Hold **all** records simultaneously *(originally named "Legend")* |
+| **Grand Slam** | Hold **all five** records simultaneously *(originally named "Legend")* |
 | **Giant Killer** | Win a game against the current highest-rated player |
 | **King of the Hill** | Win the first ever game or beat the reigning King of the Hill |
 
@@ -134,12 +134,12 @@ A badges/achievements system was designed and implemented to reward player miles
 | File | Tests | What it covers |
 |------|-------|----------------|
 | `tests/helpers.js` | — | Shared utilities: `createTestLeague`, `addPlayer`, `recordGame` |
-| `tests/api.spec.js` | 48 | All API endpoints — Leagues, Players, Games, Profile, Records, ELO maths, King of the Hill, Badges, Form guide |
+| `tests/api.spec.js` | 56 | All API endpoints — Leagues, Players, Games, Profile, Records, ELO maths, King of the Hill, Badges, Form guide, Biggest Upset, Active Streak |
 | `tests/home.spec.js` | 24 | Home page UI — league table, form guide, add player form, record game form, game history, league switcher |
 | `tests/player.spec.js` | 20 | Player profile UI — hero section, stats grid, badges, streaks, results history, ELO chart, 404 handling |
-| `tests/records.spec.js` | 14 | Records page UI — layout, all 4 record cards, player links, empty state |
+| `tests/records.spec.js` | 20 | Records page UI — layout, all 6 record cards, player links, biggest upset, active streak, empty state |
 
-**Total: 106 tests, all passing.**
+**Total: 120 tests, all passing.**
 
 #### npm scripts added
 
@@ -182,6 +182,9 @@ The `README.md` was updated multiple times throughout development to reflect:
 - Tied record holders feature
 - Comma spacing between tied names
 - Form guide in the league table
+- Biggest upset record
+- Longest active winning streak record
+- Grand Slam badge tie-consistency fix
 
 ---
 
@@ -191,7 +194,45 @@ The `README.md` was updated multiple times throughout development to reflect:
 - **Backend:** `GET /api/players` now includes a `form` array on each player object — up to 5 entries of `'W'` or `'L'`, taken from the tail of the player's chronological game history.
 - **Frontend:** Each table row renders up to 5 `<span class="form-sq form-w/form-l">` elements with a "Win"/"Loss" tooltip. Players with no games show a `—` placeholder. A **Form** column header was added.
 - **CSS:** `.form-sq` is a 10×10px rounded square with `2px` margin between squares. `.form-w` uses `var(--green)` and `.form-l` uses `var(--red)`.
-- **Tests:** 4 new API tests (form array present, only W/L values, capped at 5, reflects correct results) and 5 new UI tests (column header, squares visible, correct colour classes). Total: 106 tests.
+- **Tests:** 4 new API tests (form array present, only W/L values, capped at 5, reflects correct results) and 5 new UI tests (column header, squares visible, correct colour classes).
+
+---
+
+### 14. Biggest Upset Record
+
+- **Decision:** Added a record card to the records page — the game where the winner had the largest ELO deficit going in (i.e. `loserRatingBefore - winnerRatingBefore` was greatest).
+- **Backend:** The records API scans all games for the largest rating gap and returns a `biggestUpset` object: `{ ratingDiff, winnerId, winnerName, loserId, loserName }`. This has a different shape from the other records (which use a `holders` array) since it is a single game, not a per-player aggregate.
+- **Frontend:** A new `upsetHolder()` helper renders "winner beat loser" with both names as profile links, separated by a `<span class="upset-sep">beat</span>` so the word and spacing render correctly inside the flexbox holder div. The value is displayed as `+N pts` in red.
+- **CSS:** `.upset-sep` adds `margin: 0 5px` either side of the word "beat". When the card sits alone on the last row of the grid it spans both columns and is centred at max-width 420px.
+- **Tests:** 5 new API tests and 4 new UI tests.
+
+---
+
+### 15. Longest Active Winning Streak Record
+
+- **Decision:** Added a `⚡ Longest Active Streak` record card — the player currently on the longest *active* winning streak. This is distinct from the all-time longest streak which may have ended long ago. Positioned immediately after the all-time streak card on the records page.
+- **Backend:** After iterating each player's games, the active streak is set to the current `curWin` counter only if the player's most recent game was a win, otherwise 0. Uses the standard `holders` array so tied players are all listed.
+- **`computeBadges`:** Updated to include `longestActiveWinStreak` in the records checked for the **Record Holder** and **Grand Slam** badges. The Grand Slam badge description updated from "all four records" to "all five records simultaneously".
+- **Frontend:** New card added to `records.js` with the `playerLinks()` helper (same as other streak/stats records).
+- **Layout:** With 6 cards total the 2×3 grid is even — no orphan card CSS needed.
+- **Tests:** 4 new API tests (field present, correct holder when on active streak, zeroed when last game was a loss, tied when both players have matching streaks) and 3 new UI tests (card visible, Alice shown as holder, empty state `—`). Total: 118 tests.
+
+---
+
+### 16. Grand Slam Badge — Tie-Consistency Bug Fix
+
+- **Bug:** `computeBadges` tracked a single `playerId` per record using a plain object and strict `>` comparison. This meant:
+  - The **first** player to reach a tied value was stored as the holder and kept
+  - The **second** player who matched that value never overwrote it
+  - The first player could therefore earn Grand Slam even with a tied record
+  - The second player could never earn Grand Slam for the same tied record
+  - Behaviour was inconsistent depending purely on iteration order through the players array
+- **Fix:** Replaced the `holders` plain-object with `recHolders` — a `Set` of player IDs per record, using the same pattern as the records API endpoint:
+  - A new high resets the set to just that player
+  - A tie appends to the set
+  - **`achieve_record` (Record Holder):** player appears in *any* record's set — ties still qualify ✓
+  - **`all_records` (Grand Slam):** player is the **sole** holder (`set.size === 1`) of **every** record — ties disqualify ✗
+- **Tests:** 2 new badge tests — Grand Slam NOT awarded when any record is tied; Record Holder IS awarded when a record is tied. Total: 120 tests.
 
 ---
 
@@ -203,7 +244,7 @@ The `README.md` was updated multiple times throughout development to reflect:
 | Frontend | Vanilla HTML, CSS, JavaScript |
 | Data storage | JSON files (one per league, in `data/`) |
 | Charts | Chart.js (ELO history chart on profile page) |
-| Testing | Playwright (API + UI, 106 tests) |
+| Testing | Playwright (API + UI, 120 tests) |
 | Version control | Git + GitHub |
 
 ---

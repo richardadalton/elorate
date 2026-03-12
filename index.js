@@ -96,7 +96,7 @@ const BADGE_DEFS = [
     id: 'all_records',
     name: 'Grand Slam',
     icon: '🏆',
-    desc: 'Hold all four records simultaneously'
+    desc: 'Hold all five records simultaneously'
   },
   {
     id: 'king_of_the_hill',
@@ -151,33 +151,51 @@ function computeBadges(player, games, db) {
     if (loserBefore >= maxRating) earned.add('beat_top');
   });
 
-  // Records — compute all four and check if player holds any / all
-  const records = { longestWinStreak: 0, mostGamesPlayed: 0, mostGamesWon: 0, highestEloRating: 0 };
-  const holders = { longestWinStreak: null, mostGamesPlayed: null, mostGamesWon: null, highestEloRating: null };
+  // Records — compute all five and check if player holds any / all
+  // Use sets so ties are handled correctly:
+  //   achieve_record → player appears in at least one record's holder set
+  //   all_records    → player is the SOLE holder (set size 1) of every record
+  const recVals   = { longestWinStreak: 0, mostGamesPlayed: 0, mostGamesWon: 0, highestEloRating: 0, longestActiveWinStreak: 0 };
+  const recHolders = {
+    longestWinStreak:       new Set(),
+    mostGamesPlayed:        new Set(),
+    mostGamesWon:           new Set(),
+    highestEloRating:       new Set(),
+    longestActiveWinStreak: new Set()
+  };
+
+  function trackRecord(key, value, pid) {
+    if (value > recVals[key])       { recVals[key] = value; recHolders[key] = new Set([pid]); }
+    else if (value === recVals[key] && value > 0) { recHolders[key].add(pid); }
+  }
 
   for (const p of db.players) {
     const pg = db.games.filter(g => g.winnerId === p.id || g.loserId === p.id);
     const pp = p.wins + p.losses;
-    if (pp > records.mostGamesPlayed) { records.mostGamesPlayed = pp; holders.mostGamesPlayed = p.id; }
-    if (p.wins > records.mostGamesWon) { records.mostGamesWon = p.wins; holders.mostGamesWon = p.id; }
+    trackRecord('mostGamesPlayed', pp, p.id);
+    trackRecord('mostGamesWon', p.wins, p.id);
 
     let high = 1000;
     pg.forEach(g => {
       const r = g.winnerId === p.id ? g.winnerRatingAfter : g.loserRatingAfter;
       if (r > high) high = r;
     });
-    if (high > records.highestEloRating) { records.highestEloRating = high; holders.highestEloRating = p.id; }
+    trackRecord('highestEloRating', high, p.id);
 
     let cw = 0, cl = 0, bw = 0, bl = 0;
     pg.forEach(g => {
       if (g.winnerId === p.id) { cw++; cl = 0; if (cw > bw) bw = cw; }
       else                     { cl++; cw = 0; if (cl > bl) bl = cl; }
     });
-    if (bw > records.longestWinStreak)  { records.longestWinStreak  = bw; holders.longestWinStreak  = p.id; }
+    trackRecord('longestWinStreak', bw, p.id);
+
+    const lastGame = pg[pg.length - 1];
+    const activeStreak = (lastGame && lastGame.winnerId === p.id) ? cw : 0;
+    trackRecord('longestActiveWinStreak', activeStreak, p.id);
   }
 
-  const holdsAny = Object.values(holders).some(id => id === player.id);
-  const holdsAll = Object.values(holders).every(id => id === player.id);
+  const holdsAny = Object.values(recHolders).some(s => s.has(player.id));
+  const holdsAll = Object.values(recHolders).every(s => s.size === 1 && s.has(player.id));
   if (holdsAny) earned.add('achieve_record');
   if (holdsAll) earned.add('all_records');
 
@@ -318,10 +336,12 @@ app.get('/api/records', (req, res) => {
   const db = getDb(league);
 
   const records = {
-    longestWinStreak: { value: 0, holders: [] },
-    mostGamesPlayed:  { value: 0, holders: [] },
-    mostGamesWon:     { value: 0, holders: [] },
-    highestEloRating: { value: 0, holders: [] }
+    longestWinStreak:       { value: 0, holders: [] },
+    longestActiveWinStreak: { value: 0, holders: [] },
+    mostGamesPlayed:        { value: 0, holders: [] },
+    mostGamesWon:           { value: 0, holders: [] },
+    highestEloRating:       { value: 0, holders: [] },
+    biggestUpset:           { ratingDiff: 0, winnerId: null, winnerName: null, loserId: null, loserName: null }
   };
 
   function addHolder(record, value, player) {
@@ -353,6 +373,27 @@ app.get('/api/records', (req, res) => {
       else                          { curWin = 0; }
     });
     addHolder(records.longestWinStreak, bestWin, player);
+
+    // Active win streak — only if the player's most recent game was a win
+    const lastGame = games[games.length - 1];
+    const activeStreak = (lastGame && lastGame.winnerId === player.id) ? curWin : 0;
+    addHolder(records.longestActiveWinStreak, activeStreak, player);
+  }
+
+  // Biggest upset — the game with the largest rating deficit overcome by the winner
+  for (const g of db.games) {
+    const diff = g.loserRatingBefore - g.winnerRatingBefore;
+    if (diff > records.biggestUpset.ratingDiff) {
+      const winner = db.players.find(p => p.id === g.winnerId);
+      const loser  = db.players.find(p => p.id === g.loserId);
+      records.biggestUpset = {
+        ratingDiff: diff,
+        winnerId:   g.winnerId,
+        winnerName: winner ? winner.name : 'Unknown',
+        loserId:    g.loserId,
+        loserName:  loser  ? loser.name  : 'Unknown'
+      };
+    }
   }
 
   res.json(records);

@@ -31,6 +31,13 @@ function playerLinks(holders, league) {
     .join('<span class="holder-sep">,&nbsp;</span>');
 }
 
+function upsetHolder(upset, league) {
+  if (!upset || !upset.winnerId) return '<span class="no-record">No games yet</span>';
+  const winner = `<a class="player-link" href="/player.html?id=${esc(upset.winnerId)}&league=${esc(league)}">${esc(upset.winnerName)}</a>`;
+  const loser  = `<a class="player-link" href="/player.html?id=${esc(upset.loserId)}&league=${esc(league)}">${esc(upset.loserName)}</a>`;
+  return `${winner}<span class="upset-sep">beat</span>${loser}`;
+}
+
 function render(d, league) {
   const records = [
     {
@@ -41,6 +48,15 @@ function render(d, league) {
         : '—',
       valueClass: 'green',
       holder: playerLinks(d.longestWinStreak.holders, league)
+    },
+    {
+      icon: '⚡',
+      title: 'Longest Active Streak',
+      value: d.longestActiveWinStreak.value
+        ? `${d.longestActiveWinStreak.value} Win${d.longestActiveWinStreak.value !== 1 ? 's' : ''}`
+        : '—',
+      valueClass: 'green',
+      holder: playerLinks(d.longestActiveWinStreak.holders, league)
     },
     {
       icon: '🎱',
@@ -62,6 +78,13 @@ function render(d, league) {
       value: d.highestEloRating.value ? d.highestEloRating.value : '—',
       valueClass: 'accent',
       holder: playerLinks(d.highestEloRating.holders, league)
+    },
+    {
+      icon: '🎯',
+      title: 'Biggest Upset',
+      value: d.biggestUpset.ratingDiff ? `+${d.biggestUpset.ratingDiff} pts` : '—',
+      valueClass: 'red',
+      holder: upsetHolder(d.biggestUpset, league)
     }
   ];
 

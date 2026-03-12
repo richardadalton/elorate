@@ -349,21 +349,23 @@ test.describe('Records API', () => {
     await recordGame(request, league, alice.id, bob.id);
   });
 
-  test('GET /api/records returns the four record categories', async ({ request }) => {
+  test('GET /api/records returns all six record categories', async ({ request }) => {
     const res = await request.get(`${BASE}/api/records?league=${league}`);
     expect(res.status()).toBe(200);
     const r = await res.json();
 
     expect(r).toHaveProperty('longestWinStreak');
+    expect(r).toHaveProperty('longestActiveWinStreak');
     expect(r).toHaveProperty('mostGamesPlayed');
     expect(r).toHaveProperty('mostGamesWon');
     expect(r).toHaveProperty('highestEloRating');
+    expect(r).toHaveProperty('biggestUpset');
   });
 
-  test('each record has a holders array', async ({ request }) => {
+  test('each non-upset record has a holders array', async ({ request }) => {
     const res = await request.get(`${BASE}/api/records?league=${league}`);
     const r = await res.json();
-    for (const key of ['longestWinStreak', 'mostGamesPlayed', 'mostGamesWon', 'highestEloRating']) {
+    for (const key of ['longestWinStreak', 'longestActiveWinStreak', 'mostGamesPlayed', 'mostGamesWon', 'highestEloRating']) {
       expect(Array.isArray(r[key].holders)).toBe(true);
     }
   });
@@ -372,14 +374,49 @@ test.describe('Records API', () => {
     const res = await request.get(`${BASE}/api/records?league=${league}`);
     const r = await res.json();
     expect(r.longestWinStreak.value).toBe(3);
-    expect(r.longestWinStreak.holders).toHaveLength(1);
     expect(r.longestWinStreak.holders[0].name).toBe('Alice');
+  });
+
+  test('longestActiveWinStreak is held by Alice (last game was a win)', async ({ request }) => {
+    // beforeAll: Alice won all 3 games — she has an active streak of 3
+    const res = await request.get(`${BASE}/api/records?league=${league}`);
+    const r = await res.json();
+    expect(r.longestActiveWinStreak.value).toBe(3);
+    expect(r.longestActiveWinStreak.holders[0].name).toBe('Alice');
+  });
+
+  test('longestActiveWinStreak is zero for a player whose last game was a loss', async ({ request }) => {
+    const al = await createTestLeague(request, '_activestreak');
+    const aa = await addPlayer(request, al, 'Alice');
+    const ab = await addPlayer(request, al, 'Bob');
+    // Alice wins two, then loses — her active streak is 0
+    await recordGame(request, al, aa.id, ab.id);
+    await recordGame(request, al, aa.id, ab.id);
+    await recordGame(request, al, ab.id, aa.id);
+
+    const res = await request.get(`${BASE}/api/records?league=${al}`);
+    const r = await res.json();
+    // Bob won the last game so he has an active streak of 1
+    expect(r.longestActiveWinStreak.value).toBe(1);
+    expect(r.longestActiveWinStreak.holders[0].name).toBe('Bob');
+  });
+
+  test('longestActiveWinStreak shows — when no player has an active win streak', async ({ request }) => {
+    const el = await createTestLeague(request, '_noactive');
+    const ea = await addPlayer(request, el, 'Alice');
+    const eb = await addPlayer(request, el, 'Bob');
+    // Alice wins, then Bob wins — both have a 1-game active streak (tied)
+    await recordGame(request, el, ea.id, eb.id);
+    await recordGame(request, el, eb.id, ea.id);
+
+    const res = await request.get(`${BASE}/api/records?league=${el}`);
+    const r = await res.json();
+    expect(r.longestActiveWinStreak.value).toBe(1);
   });
 
   test('mostGamesPlayed record is correct and includes both tied players', async ({ request }) => {
     const res = await request.get(`${BASE}/api/records?league=${league}`);
     const r = await res.json();
-    // Both Alice and Bob played 3 games — it's a tie
     expect(r.mostGamesPlayed.value).toBe(3);
     expect(r.mostGamesPlayed.holders).toHaveLength(2);
     const names = r.mostGamesPlayed.holders.map(h => h.name);
@@ -399,6 +436,41 @@ test.describe('Records API', () => {
     const r = await res.json();
     expect(r.highestEloRating.holders[0].name).toBe('Alice');
     expect(r.highestEloRating.value).toBeGreaterThan(1000);
+  });
+
+  test('biggestUpset has ratingDiff, winnerName and loserName', async ({ request }) => {
+    const res = await request.get(`${BASE}/api/records?league=${league}`);
+    const r = await res.json();
+    expect(r.biggestUpset).toHaveProperty('ratingDiff');
+    expect(r.biggestUpset).toHaveProperty('winnerName');
+    expect(r.biggestUpset).toHaveProperty('loserName');
+  });
+
+  test('biggestUpset ratingDiff is positive when an upset has occurred', async ({ request }) => {
+    const ul = await createTestLeague(request, '_upset');
+    const ua = await addPlayer(request, ul, 'Alice');
+    const ub = await addPlayer(request, ul, 'Bob');
+    await recordGame(request, ul, ub.id, ua.id);
+    await recordGame(request, ul, ub.id, ua.id);
+    await recordGame(request, ul, ub.id, ua.id);
+    await recordGame(request, ul, ua.id, ub.id);
+
+    const res = await request.get(`${BASE}/api/records?league=${ul}`);
+    const r = await res.json();
+    expect(r.biggestUpset.ratingDiff).toBeGreaterThan(0);
+    expect(r.biggestUpset.winnerName).toBe('Alice');
+    expect(r.biggestUpset.loserName).toBe('Bob');
+  });
+
+  test('biggestUpset is null/zero when no upset has occurred', async ({ request }) => {
+    const nl = await createTestLeague(request, '_noupset');
+    const na = await addPlayer(request, nl, 'Alice');
+    const nb = await addPlayer(request, nl, 'Bob');
+    await recordGame(request, nl, na.id, nb.id);
+
+    const res = await request.get(`${BASE}/api/records?league=${nl}`);
+    const r = await res.json();
+    expect(r.biggestUpset.ratingDiff).toBe(0);
   });
 
   test('GET /api/records returns 404 for unknown league', async ({ request }) => {
@@ -570,16 +642,43 @@ test.describe('Badges', () => {
   });
 
   test('beat_top badge is awarded when top player is beaten', async ({ request }) => {
-    // In this league Alice is highly rated — Bob needs to beat Alice to get the badge.
-    // We already have alternating results, so check if bob ever beat alice when she was top
     const res = await request.get(`${BASE}/api/players/${bob.id}/profile?league=${league}`);
     const p = await res.json();
-    // Bob has beaten Alice at least once during the 10-game sequence
     const badge = p.badges.find(b => b.id === 'beat_top');
-    // This badge depends on whether bob ever beat alice when alice was the top-rated player.
-    // It may or may not be earned here, so just verify the badge is present in the list.
     expect(badge).toBeTruthy();
     expect(typeof badge.earned).toBe('boolean');
+  });
+
+  test('all_records (Grand Slam) is NOT awarded when player ties a record', async ({ request }) => {
+    const gl = await createTestLeague(request, '_gs_tie');
+    const ga = await addPlayer(request, gl, 'Alice');
+    const gb = await addPlayer(request, gl, 'Bob');
+    // One game each — both have played 1, so mostGamesPlayed is tied
+    await recordGame(request, gl, ga.id, gb.id);
+
+    const resA = await request.get(`${BASE}/api/players/${ga.id}/profile?league=${gl}`);
+    const resB = await request.get(`${BASE}/api/players/${gb.id}/profile?league=${gl}`);
+    const profileA = await resA.json();
+    const profileB = await resB.json();
+
+    // Neither player should hold Grand Slam — mostGamesPlayed is tied
+    expect(profileA.badges.find(b => b.id === 'all_records').earned).toBe(false);
+    expect(profileB.badges.find(b => b.id === 'all_records').earned).toBe(false);
+  });
+
+  test('achieve_record IS awarded when player ties a record', async ({ request }) => {
+    const gl = await createTestLeague(request, '_ar_tie');
+    const ga = await addPlayer(request, gl, 'Alice');
+    const gb = await addPlayer(request, gl, 'Bob');
+    await recordGame(request, gl, ga.id, gb.id);
+
+    const resA = await request.get(`${BASE}/api/players/${ga.id}/profile?league=${gl}`);
+    const resB = await request.get(`${BASE}/api/players/${gb.id}/profile?league=${gl}`);
+    const profileA = await resA.json();
+    const profileB = await resB.json();
+
+    expect(profileA.badges.find(b => b.id === 'achieve_record').earned).toBe(true);
+    expect(profileB.badges.find(b => b.id === 'achieve_record').earned).toBe(true);
   });
 });
 
