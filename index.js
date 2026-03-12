@@ -165,6 +165,56 @@ app.get('/api/players/:id/profile', (req, res) => {
   });
 });
 
+// GET /api/records — all-time records
+app.get('/api/records', (req, res) => {
+  const records = {
+    longestWinStreak:  { value: 0, playerId: null, playerName: null },
+    longestLossStreak: { value: 0, playerId: null, playerName: null },
+    mostGamesPlayed:   { value: 0, playerId: null, playerName: null },
+    highestEloRating:  { value: 0, playerId: null, playerName: null }
+  };
+
+  for (const player of db.players) {
+    const games = db.games.filter(g => g.winnerId === player.id || g.loserId === player.id);
+    const played = player.wins + player.losses;
+
+    // Most games played
+    if (played > records.mostGamesPlayed.value) {
+      records.mostGamesPlayed = { value: played, playerId: player.id, playerName: player.name };
+    }
+
+    // Highest ELO ever (walk game history)
+    let high = 1000;
+    games.forEach(g => {
+      const r = g.winnerId === player.id ? g.winnerRatingAfter : g.loserRatingAfter;
+      if (r > high) high = r;
+    });
+    if (high > records.highestEloRating.value) {
+      records.highestEloRating = { value: high, playerId: player.id, playerName: player.name };
+    }
+
+    // Win / loss streaks
+    let curWin = 0, curLoss = 0, bestWin = 0, bestLoss = 0;
+    games.forEach(g => {
+      if (g.winnerId === player.id) {
+        curWin++; curLoss = 0;
+        if (curWin > bestWin) bestWin = curWin;
+      } else {
+        curLoss++; curWin = 0;
+        if (curLoss > bestLoss) bestLoss = curLoss;
+      }
+    });
+    if (bestWin > records.longestWinStreak.value) {
+      records.longestWinStreak = { value: bestWin, playerId: player.id, playerName: player.name };
+    }
+    if (bestLoss > records.longestLossStreak.value) {
+      records.longestLossStreak = { value: bestLoss, playerId: player.id, playerName: player.name };
+    }
+  }
+
+  res.json(records);
+});
+
 // GET /api/games — game history, most recent first
 app.get('/api/games', (req, res) => {
   const games = [...db.games].reverse();

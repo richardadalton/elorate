@@ -1,6 +1,6 @@
 # 🎱 Pool League
 
-A local multiplayer pool league tracker with **ELO ratings**, player profiles, and game history. Run it on your local network so anyone can record results from their phone or browser.
+A local multiplayer pool league tracker with **ELO ratings**, player profiles, game history, and all-time records. Run it on your local network so anyone can record results from their phone or browser.
 
 ---
 
@@ -12,8 +12,13 @@ A local multiplayer pool league tracker with **ELO ratings**, player profiles, a
   - Win/loss record & win percentage
   - Current streak, longest win streak, longest loss streak
   - Highest & lowest ELO ever reached
-  - Last 5 results
+  - Full results history (scrollable)
   - ELO rating history chart
+- **Records page** — all-time bests across every player:
+  - Longest winning streak
+  - Longest losing streak
+  - Most games played
+  - Highest ever ELO rating
 - **Game history** — full log of all recorded results
 - **Network accessible** — accessible from any device on the same Wi-Fi
 
@@ -57,20 +62,23 @@ The server will start on port **3000**. Open your browser and go to:
 
 ```
 pool_league/
-├── index.js          # Express server & API routes
+├── index.js           # Express server & API routes
 ├── package.json
 ├── data/
-│   └── db.json       # Persistent data store (players & games)
+│   └── db.json        # Persistent data store (players & games)
 └── public/
-    ├── index.html    # Main league table & record game page
-    ├── player.html   # Individual player profile page
+    ├── index.html     # Main league table & record game page
+    ├── player.html    # Individual player profile page
+    ├── records.html   # All-time records page
     ├── css/
     │   ├── main.css
     │   ├── index.css
-    │   └── player.css
+    │   ├── player.css
+    │   └── records.css
     └── js/
-        ├── index.js  # Frontend logic for main page
-        └── player.js # Frontend logic for player profile
+        ├── index.js   # Frontend logic for main page
+        ├── player.js  # Frontend logic for player profile
+        └── records.js # Frontend logic for records page
 ```
 
 ---
@@ -84,6 +92,7 @@ pool_league/
 | `GET` | `/api/players/:id/profile` | Get full stats for a player |
 | `GET` | `/api/games` | Get all games (most recent first) |
 | `POST` | `/api/games` | Record a game result `{ winnerId, loserId }` |
+| `GET` | `/api/records` | Get all-time records across all players |
 
 ---
 
