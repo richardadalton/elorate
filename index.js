@@ -95,10 +95,29 @@ const BADGE_DEFS = [
   {
     id: 'all_records',
     name: 'Grand Slam',
-    icon: '👑',
+    icon: '🏆',
     desc: 'Hold all four records simultaneously'
+  },
+  {
+    id: 'king_of_the_hill',
+    name: 'King of the Hill',
+    icon: '👑',
+    desc: 'Win the first ever game or beat the reigning King of the Hill'
   }
 ];
+
+// Walk the game history chronologically — the winner of the first game
+// becomes king; the title transfers whenever the current king loses.
+function computeKingOfTheHill(db) {
+  if (!db.games.length) return null;
+  const sorted = [...db.games].sort((a, b) => a.playedAt.localeCompare(b.playedAt));
+  let kingId = sorted[0].winnerId;
+  for (let i = 1; i < sorted.length; i++) {
+    const g = sorted[i];
+    if (g.loserId === kingId) kingId = g.winnerId;
+  }
+  return kingId;
+}
 
 function computeBadges(player, games, db) {
   const earned = new Set();
@@ -162,6 +181,8 @@ function computeBadges(player, games, db) {
   if (holdsAny) earned.add('achieve_record');
   if (holdsAll) earned.add('all_records');
 
+  if (computeKingOfTheHill(db) === player.id) earned.add('king_of_the_hill');
+
   return BADGE_DEFS.map(b => ({ ...b, earned: earned.has(b.id) }));
 }
 
@@ -204,7 +225,8 @@ app.get('/api/players', (req, res) => {
   const league = resolveLeague(req, res); if (!league) return;
   const db = getDb(league);
   const sorted = [...db.players].sort((a, b) => b.rating - a.rating);
-  res.json(sorted);
+  const kingId = computeKingOfTheHill(db);
+  res.json({ players: sorted, kingId });
 });
 
 // POST /api/players?league=pool

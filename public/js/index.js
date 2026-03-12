@@ -95,7 +95,9 @@ async function addLeague() {
 // ── Render League Table ───────────────────────────────────────────────────────
 
 async function loadLeague() {
-  const players = await api('GET', `/api/players?league=${currentLeague}`);
+  const data = await api('GET', `/api/players?league=${currentLeague}`);
+  const players = data.players;
+  const kingId  = data.kingId;
   const wrap = document.getElementById('league-table-wrap');
 
   if (!players.length) {
@@ -108,10 +110,11 @@ async function loadLeague() {
     const posClass = rank <= 3 ? `pos-${rank}` : '';
     const total = p.wins + p.losses;
     const pct = total ? Math.round((p.wins / total) * 100) : 0;
+    const crown = p.id === kingId ? ' <span class="koth-crown" title="King of the Hill">👑</span>' : '';
     return `
       <tr>
         <td class="pos ${posClass}">${rank}</td>
-        <td class="player-name"><a href="/player.html?id=${p.id}&league=${currentLeague}" class="player-link">${esc(p.name)}</a></td>
+        <td class="player-name"><a href="/player.html?id=${p.id}&league=${currentLeague}" class="player-link">${esc(p.name)}</a>${crown}</td>
         <td class="num"><span class="rating-badge">${p.rating}</span></td>
         <td class="num">${p.wins}</td>
         <td class="num">${p.losses}</td>
