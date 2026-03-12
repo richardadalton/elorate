@@ -1,4 +1,20 @@
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── League state ──────────────────────────────────────────────────────────────
+
+let currentLeague = localStorage.getItem('currentLeague') || 'pool';
+
+function setLeague(league) {
+  currentLeague = league;
+  localStorage.setItem('currentLeague', league);
+  document.getElementById('league-title').textContent = formatLeagueName(league);
+  renderLeagueSwitcher(window._leagues || []);
+  refresh();
+}
+
+function formatLeagueName(slug) {
+  return slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function setMsg(id, text, isErr) {
   const el = document.getElementById(id);
@@ -34,10 +50,52 @@ function esc(str) {
     .replace(/"/g, '&quot;');
 }
 
+// ── League Switcher ───────────────────────────────────────────────────────────
+
+async function loadLeagueSwitcher() {
+  const leagues = await api('GET', '/api/leagues');
+  window._leagues = leagues;
+  // If saved league no longer exists, fall back to first available
+  if (!leagues.includes(currentLeague)) {
+    currentLeague = leagues[0] || 'pool';
+    localStorage.setItem('currentLeague', currentLeague);
+  }
+  document.getElementById('league-title').textContent = formatLeagueName(currentLeague);
+  renderLeagueSwitcher(leagues);
+}
+
+function renderLeagueSwitcher(leagues) {
+  const wrap = document.getElementById('league-switcher');
+  wrap.innerHTML = leagues.map(l => `
+    <button class="league-pill${l === currentLeague ? ' active' : ''}" onclick="setLeague('${esc(l)}')">${esc(formatLeagueName(l))}</button>
+  `).join('') + `<button class="league-pill add-league" onclick="toggleNewLeagueForm()">＋ New</button>`;
+}
+
+function toggleNewLeagueForm() {
+  const form = document.getElementById('new-league-form');
+  form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+  if (form.style.display === 'flex') document.getElementById('new-league-name').focus();
+}
+
+async function addLeague() {
+  const input = document.getElementById('new-league-name');
+  const name = input.value.trim();
+  if (!name) return setMsg('league-msg', 'Please enter a league name.', true);
+  try {
+    const result = await api('POST', '/api/leagues', { name });
+    input.value = '';
+    document.getElementById('new-league-form').style.display = 'none';
+    window._leagues = await api('GET', '/api/leagues');
+    setLeague(result.league);
+  } catch (e) {
+    setMsg('league-msg', e.message, true);
+  }
+}
+
 // ── Render League Table ───────────────────────────────────────────────────────
 
 async function loadLeague() {
-  const players = await api('GET', '/api/players');
+  const players = await api('GET', `/api/players?league=${currentLeague}`);
   const wrap = document.getElementById('league-table-wrap');
 
   if (!players.length) {
@@ -53,7 +111,7 @@ async function loadLeague() {
     return `
       <tr>
         <td class="pos ${posClass}">${rank}</td>
-        <td class="player-name"><a href="/player.html?id=${p.id}" class="player-link">${esc(p.name)}</a></td>
+        <td class="player-name"><a href="/player.html?id=${p.id}&league=${currentLeague}" class="player-link">${esc(p.name)}</a></td>
         <td class="num"><span class="rating-badge">${p.rating}</span></td>
         <td class="num">${p.wins}</td>
         <td class="num">${p.losses}</td>
@@ -65,12 +123,8 @@ async function loadLeague() {
     <table>
       <thead>
         <tr>
-          <th>#</th>
-          <th>Player</th>
-          <th class="num">ELO</th>
-          <th class="num">W</th>
-          <th class="num">L</th>
-          <th class="num">Win%</th>
+          <th>#</th><th>Player</th>
+          <th class="num">ELO</th><th class="num">W</th><th class="num">L</th><th class="num">Win%</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -82,7 +136,7 @@ async function loadLeague() {
 // ── Render History ────────────────────────────────────────────────────────────
 
 async function loadHistory() {
-  const games = await api('GET', '/api/games');
+  const games = await api('GET', `/api/games?league=${currentLeague}`);
   const list = document.getElementById('history-list');
 
   if (!games.length) {
@@ -120,7 +174,7 @@ function populateSelects(players) {
   if (lVal) ls.value = lVal;
 }
 
-// ── Full refresh ──────────────────────────────────────────────────────────────
+// ── Full refresh ───────────────────────────────────────��──────────────────────
 
 async function refresh() {
   try {
@@ -139,7 +193,7 @@ async function addPlayer() {
   const name = input.value.trim();
   if (!name) return setMsg('player-msg', 'Please enter a name.', true);
   try {
-    await api('POST', '/api/players', { name });
+    await api('POST', `/api/players?league=${currentLeague}`, { name });
     input.value = '';
     setMsg('player-msg', `${name} added!`, false);
     await refresh();
@@ -161,7 +215,7 @@ async function recordGame() {
   const btn = document.getElementById('record-btn');
   btn.disabled = true;
   try {
-    const g = await api('POST', '/api/games', { winnerId, loserId });
+    const g = await api('POST', `/api/games?league=${currentLeague}`, { winnerId, loserId });
     setMsg('game-msg', `✅ ${g.winnerName} beat ${g.loserName} (+${g.ratingChange} pts)`, false);
     document.getElementById('winner-select').value = '';
     document.getElementById('loser-select').value  = '';
@@ -175,5 +229,4 @@ async function recordGame() {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
-refresh();
-
+loadLeagueSwitcher().then(() => refresh());

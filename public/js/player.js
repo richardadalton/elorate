@@ -15,14 +15,18 @@ function ordinal(n) {
 
 async function load() {
   const params = new URLSearchParams(location.search);
-  const id = params.get('id');
+  const id     = params.get('id');
+  const league = params.get('league') || localStorage.getItem('currentLeague') || 'pool';
   if (!id) { render404(); return; }
 
+  // Update back link to carry league context
+  document.querySelector('.back-link').href = `/?league=${league}`;
+
   try {
-    const r = await fetch(`/api/players/${id}/profile`);
+    const r = await fetch(`/api/players/${id}/profile?league=${league}`);
     if (!r.ok) { render404(); return; }
     const p = await r.json();
-    renderProfile(p);
+    renderProfile(p, league);
   } catch (e) {
     document.getElementById('root').innerHTML =
       `<div class="center">Failed to load profile.</div>`;
@@ -34,7 +38,7 @@ function render404() {
     `<div class="center">Player not found.</div>`;
 }
 
-function renderProfile(p) {
+function renderProfile(p, league) {
   document.title = `${p.name} — Pool League`;
 
   const initial = p.name.trim()[0].toUpperCase();

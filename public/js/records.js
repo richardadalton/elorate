@@ -4,24 +4,32 @@ function esc(str) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function formatLeagueName(slug) {
+  return slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 async function load() {
+  const league = localStorage.getItem('currentLeague') || 'pool';
+  document.querySelector('header p').textContent =
+    `All-time bests — ${formatLeagueName(league)}`;
+
   try {
-    const r = await fetch('/api/records');
+    const r = await fetch(`/api/records?league=${league}`);
     if (!r.ok) throw new Error();
     const data = await r.json();
-    render(data);
+    render(data, league);
   } catch (e) {
     document.getElementById('root').innerHTML =
       '<div class="empty-state">Failed to load records.</div>';
   }
 }
 
-function playerLink(id, name) {
+function playerLink(id, name, league) {
   if (!id) return '<span class="no-record">No games yet</span>';
-  return `<a class="player-link" href="/player.html?id=${esc(id)}">${esc(name)}</a>`;
+  return `<a class="player-link" href="/player.html?id=${esc(id)}&league=${esc(league)}">${esc(name)}</a>`;
 }
 
-function render(d) {
+function render(d, league) {
   const records = [
     {
       icon: '🔥',
@@ -30,7 +38,7 @@ function render(d) {
         ? `${d.longestWinStreak.value} Win${d.longestWinStreak.value !== 1 ? 's' : ''}`
         : '—',
       valueClass: 'green',
-      holder: playerLink(d.longestWinStreak.playerId, d.longestWinStreak.playerName)
+      holder: playerLink(d.longestWinStreak.playerId, d.longestWinStreak.playerName, league)
     },
     {
       icon: '📉',
@@ -39,21 +47,21 @@ function render(d) {
         ? `${d.longestLossStreak.value} Loss${d.longestLossStreak.value !== 1 ? 'es' : ''}`
         : '—',
       valueClass: 'red',
-      holder: playerLink(d.longestLossStreak.playerId, d.longestLossStreak.playerName)
+      holder: playerLink(d.longestLossStreak.playerId, d.longestLossStreak.playerName, league)
     },
     {
       icon: '🎱',
       title: 'Most Games Played',
       value: d.mostGamesPlayed.value ? `${d.mostGamesPlayed.value} Games` : '—',
       valueClass: 'accent',
-      holder: playerLink(d.mostGamesPlayed.playerId, d.mostGamesPlayed.playerName)
+      holder: playerLink(d.mostGamesPlayed.playerId, d.mostGamesPlayed.playerName, league)
     },
     {
       icon: '⭐',
       title: 'Highest Ever ELO',
       value: d.highestEloRating.value ? d.highestEloRating.value : '—',
       valueClass: 'accent',
-      holder: playerLink(d.highestEloRating.playerId, d.highestEloRating.playerName)
+      holder: playerLink(d.highestEloRating.playerId, d.highestEloRating.playerName, league)
     }
   ];
 
@@ -72,4 +80,3 @@ function render(d) {
 }
 
 load();
-

@@ -5,25 +5,38 @@ const path = require('path');
 const app = express();
 const PORT = 3000;
 const DATA_DIR = path.join(__dirname, 'data');
-const DB_PATH = path.join(DATA_DIR, 'db.json');
 
-// ── Persistence ──────────────────────────────────────────────────────────────
+// ── Persistence ───────────────────────────────────────────────────────────────
 
-function loadDb() {
+function dbPath(league) {
+  return path.join(DATA_DIR, `${league}.json`);
+}
+
+function getDb(league) {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DB_PATH)) {
+  const p = dbPath(league);
+  if (!fs.existsSync(p)) {
     const initial = { players: [], games: [] };
-    fs.writeFileSync(DB_PATH, JSON.stringify(initial, null, 2));
+    fs.writeFileSync(p, JSON.stringify(initial, null, 2));
     return initial;
   }
-  return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  return JSON.parse(fs.readFileSync(p, 'utf8'));
 }
 
-function saveDb(db) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+function saveDb(league, db) {
+  fs.writeFileSync(dbPath(league), JSON.stringify(db, null, 2));
 }
 
-let db = loadDb();
+function getLeagues() {
+  if (!fs.existsSync(DATA_DIR)) return [];
+  return fs.readdirSync(DATA_DIR)
+    .filter(f => f.endsWith('.json'))
+    .map(f => f.replace('.json', ''));
+}
+
+function validLeague(league) {
+  return typeof league === 'string' && /^[a-z0-9_-]+$/i.test(league) && league.length <= 40;
+}
 
 // ── ELO calculation ───────────────────────────────────────────────────────────
 
@@ -45,47 +58,69 @@ function calcElo(winnerRating, loserRating) {
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ── League management ─────────────────────────────────────────────────────────
+
+// GET /api/leagues — list all leagues
+app.get('/api/leagues', (req, res) => {
+  res.json(getLeagues());
+});
+
+// POST /api/leagues — create a new league { name }
+app.post('/api/leagues', (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+  const slug = name.trim().toLowerCase().replace(/\s+/g, '_');
+  if (!validLeague(slug)) return res.status(400).json({ error: 'Invalid league name' });
+  if (fs.existsSync(dbPath(slug))) return res.status(400).json({ error: 'League already exists' });
+  getDb(slug); // creates the file
+  res.status(201).json({ league: slug });
+});
+
+// ── Helper — resolve & validate ?league= param ────────────────────────────────
+
+function resolveLeague(req, res) {
+  const league = (req.query.league || 'pool').toLowerCase();
+  if (!validLeague(league)) { res.status(400).json({ error: 'Invalid league' }); return null; }
+  if (!fs.existsSync(dbPath(league))) { res.status(404).json({ error: 'League not found' }); return null; }
+  return league;
+}
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 
-// GET /api/players — league table sorted by rating desc
+// GET /api/players?league=pool
 app.get('/api/players', (req, res) => {
+  const league = resolveLeague(req, res); if (!league) return;
+  const db = getDb(league);
   const sorted = [...db.players].sort((a, b) => b.rating - a.rating);
   res.json(sorted);
 });
 
-// POST /api/players — add player
+// POST /api/players?league=pool
 app.post('/api/players', (req, res) => {
+  const league = resolveLeague(req, res); if (!league) return;
+  const db = getDb(league);
   const { name } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
   const duplicate = db.players.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
   if (duplicate) return res.status(400).json({ error: 'Player already exists' });
 
-  const player = {
-    id: Date.now().toString(),
-    name: name.trim(),
-    rating: 1000,
-    wins: 0,
-    losses: 0
-  };
+  const player = { id: Date.now().toString(), name: name.trim(), rating: 1000, wins: 0, losses: 0 };
   db.players.push(player);
-  saveDb(db);
+  saveDb(league, db);
   res.status(201).json(player);
 });
 
-
-// GET /api/players/:id/profile — full stats for one player
+// GET /api/players/:id/profile?league=pool
 app.get('/api/players/:id/profile', (req, res) => {
+  const league = resolveLeague(req, res); if (!league) return;
+  const db = getDb(league);
   const player = db.players.find(p => p.id === req.params.id);
   if (!player) return res.status(404).json({ error: 'Player not found' });
 
-  // All games involving this player, chronological
   const games = db.games.filter(g => g.winnerId === player.id || g.loserId === player.id);
-
-  // League position
   const sorted = [...db.players].sort((a, b) => b.rating - a.rating);
   const position = sorted.findIndex(p => p.id === player.id) + 1;
 
-  // All results, most recent first
   const allResults = [...games].reverse().map(g => ({
     result: g.winnerId === player.id ? 'W' : 'L',
     opponent: g.winnerId === player.id
@@ -95,78 +130,49 @@ app.get('/api/players/:id/profile', (req, res) => {
     playedAt: g.playedAt
   }));
 
-  // Streaks
-  let longestWin = 0, longestLoss = 0;
-  let curWin = 0, curLoss = 0;
+  let longestWin = 0, longestLoss = 0, curWin = 0, curLoss = 0;
   let currentStreak = { type: null, count: 0 };
-
   games.forEach(g => {
     const won = g.winnerId === player.id;
-    if (won) {
-      curWin++;
-      curLoss = 0;
-      if (curWin > longestWin) longestWin = curWin;
-    } else {
-      curLoss++;
-      curWin = 0;
-      if (curLoss > longestLoss) longestLoss = curLoss;
-    }
+    if (won) { curWin++; curLoss = 0; if (curWin > longestWin) longestWin = curWin; }
+    else     { curLoss++; curWin = 0; if (curLoss > longestLoss) longestLoss = curLoss; }
   });
-
   if (games.length) {
     const lastWon = games[games.length - 1].winnerId === player.id;
-    if (lastWon) currentStreak = { type: 'W', count: curWin };
-    else         currentStreak = { type: 'L', count: curLoss };
+    currentStreak = lastWon ? { type: 'W', count: curWin } : { type: 'L', count: curLoss };
   }
 
-  // Highest / lowest ELO ever (reconstruct from game history)
   let high = player.rating, low = player.rating;
-  // Walk through games chronologically, tracking rating
-  let rating = 1000; // started at 1000
   games.forEach(g => {
-    const won = g.winnerId === player.id;
-    rating = won ? g.winnerRatingAfter : g.loserRatingAfter;
-    if (rating > high) high = rating;
-    if (rating < low)  low  = rating;
+    const r = g.winnerId === player.id ? g.winnerRatingAfter : g.loserRatingAfter;
+    if (r > high) high = r;
+    if (r < low)  low  = r;
   });
-  // Also check the starting rating of 1000
   if (1000 > high) high = 1000;
   if (1000 < low)  low  = 1000;
 
-  // ELO history for chart — starting point + one entry per game
   const eloHistory = [{ rating: 1000, playedAt: null, label: 'Start' }];
   games.forEach(g => {
     const won = g.winnerId === player.id;
-    eloHistory.push({
-      rating: won ? g.winnerRatingAfter : g.loserRatingAfter,
-      playedAt: g.playedAt
-    });
+    eloHistory.push({ rating: won ? g.winnerRatingAfter : g.loserRatingAfter, playedAt: g.playedAt });
   });
 
   const total = player.wins + player.losses;
-
   res.json({
-    id: player.id,
-    name: player.name,
-    rating: player.rating,
-    position,
-    totalPlayers: db.players.length,
-    wins: player.wins,
-    losses: player.losses,
-    played: total,
+    id: player.id, name: player.name, rating: player.rating,
+    position, totalPlayers: db.players.length,
+    wins: player.wins, losses: player.losses, played: total,
     winPct: total ? Math.round((player.wins / total) * 100) : 0,
-    results: allResults,
-    longestWinStreak: longestWin,
-    longestLossStreak: longestLoss,
-    currentStreak,
-    highestRating: high,
-    lowestRating: low,
-    eloHistory
+    results: allResults, longestWinStreak: longestWin, longestLossStreak: longestLoss,
+    currentStreak, highestRating: high, lowestRating: low, eloHistory
   });
 });
 
-// GET /api/records — all-time records
+// GET /api/records?league=pool
 app.get('/api/records', (req, res) => {
+  const league = resolveLeague(req, res); if (!league) return;
+  const db = getDb(league);
+
   const records = {
     longestWinStreak:  { value: 0, playerId: null, playerName: null },
     longestLossStreak: { value: 0, playerId: null, playerName: null },
@@ -177,65 +183,50 @@ app.get('/api/records', (req, res) => {
   for (const player of db.players) {
     const games = db.games.filter(g => g.winnerId === player.id || g.loserId === player.id);
     const played = player.wins + player.losses;
-
-    // Most games played
-    if (played > records.mostGamesPlayed.value) {
+    if (played > records.mostGamesPlayed.value)
       records.mostGamesPlayed = { value: played, playerId: player.id, playerName: player.name };
-    }
 
-    // Highest ELO ever (walk game history)
     let high = 1000;
     games.forEach(g => {
       const r = g.winnerId === player.id ? g.winnerRatingAfter : g.loserRatingAfter;
       if (r > high) high = r;
     });
-    if (high > records.highestEloRating.value) {
+    if (high > records.highestEloRating.value)
       records.highestEloRating = { value: high, playerId: player.id, playerName: player.name };
-    }
 
-    // Win / loss streaks
     let curWin = 0, curLoss = 0, bestWin = 0, bestLoss = 0;
     games.forEach(g => {
-      if (g.winnerId === player.id) {
-        curWin++; curLoss = 0;
-        if (curWin > bestWin) bestWin = curWin;
-      } else {
-        curLoss++; curWin = 0;
-        if (curLoss > bestLoss) bestLoss = curLoss;
-      }
+      if (g.winnerId === player.id) { curWin++; curLoss = 0; if (curWin > bestWin) bestWin = curWin; }
+      else                          { curLoss++; curWin = 0; if (curLoss > bestLoss) bestLoss = curLoss; }
     });
-    if (bestWin > records.longestWinStreak.value) {
-      records.longestWinStreak = { value: bestWin, playerId: player.id, playerName: player.name };
-    }
-    if (bestLoss > records.longestLossStreak.value) {
+    if (bestWin  > records.longestWinStreak.value)
+      records.longestWinStreak  = { value: bestWin,  playerId: player.id, playerName: player.name };
+    if (bestLoss > records.longestLossStreak.value)
       records.longestLossStreak = { value: bestLoss, playerId: player.id, playerName: player.name };
-    }
   }
 
   res.json(records);
 });
 
-// GET /api/games — game history, most recent first
+// GET /api/games?league=pool
 app.get('/api/games', (req, res) => {
-  const games = [...db.games].reverse();
-  // Enrich with player names
-  const enriched = games.map(g => {
+  const league = resolveLeague(req, res); if (!league) return;
+  const db = getDb(league);
+  const enriched = [...db.games].reverse().map(g => {
     const winner = db.players.find(p => p.id === g.winnerId);
     const loser  = db.players.find(p => p.id === g.loserId);
-    return {
-      ...g,
-      winnerName: winner ? winner.name : 'Unknown',
-      loserName:  loser  ? loser.name  : 'Unknown'
-    };
+    return { ...g, winnerName: winner ? winner.name : 'Unknown', loserName: loser ? loser.name : 'Unknown' };
   });
   res.json(enriched);
 });
 
-// POST /api/games — record a result
+// POST /api/games?league=pool
 app.post('/api/games', (req, res) => {
+  const league = resolveLeague(req, res); if (!league) return;
+  const db = getDb(league);
   const { winnerId, loserId } = req.body;
   if (!winnerId || !loserId) return res.status(400).json({ error: 'winnerId and loserId required' });
-  if (winnerId === loserId) return res.status(400).json({ error: 'Winner and loser must be different players' });
+  if (winnerId === loserId)  return res.status(400).json({ error: 'Winner and loser must be different players' });
 
   const winner = db.players.find(p => p.id === winnerId);
   const loser  = db.players.find(p => p.id === loserId);
@@ -243,32 +234,20 @@ app.post('/api/games', (req, res) => {
   if (!loser)  return res.status(404).json({ error: 'Loser not found' });
 
   const { newWinnerRating, newLoserRating, change } = calcElo(winner.rating, loser.rating);
-
   const game = {
     id: Date.now().toString(),
-    winnerId: winner.id,
-    loserId:  loser.id,
-    winnerRatingBefore: winner.rating,
-    loserRatingBefore:  loser.rating,
-    winnerRatingAfter:  newWinnerRating,
-    loserRatingAfter:   newLoserRating,
-    ratingChange: change,
-    playedAt: new Date().toISOString()
+    winnerId: winner.id, loserId: loser.id,
+    winnerRatingBefore: winner.rating, loserRatingBefore: loser.rating,
+    winnerRatingAfter: newWinnerRating, loserRatingAfter: newLoserRating,
+    ratingChange: change, playedAt: new Date().toISOString()
   };
 
-  winner.rating = newWinnerRating;
-  winner.wins  += 1;
-  loser.rating  = newLoserRating;
-  loser.losses += 1;
-
+  winner.rating = newWinnerRating; winner.wins   += 1;
+  loser.rating  = newLoserRating;  loser.losses  += 1;
   db.games.push(game);
-  saveDb(db);
+  saveDb(league, db);
 
-  res.status(201).json({
-    ...game,
-    winnerName: winner.name,
-    loserName:  loser.name
-  });
+  res.status(201).json({ ...game, winnerName: winner.name, loserName: loser.name });
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
@@ -277,11 +256,9 @@ const os = require('os');
 
 function getLocalIP() {
   const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name]) {
+  for (const name of Object.keys(nets))
+    for (const net of nets[name])
       if (net.family === 'IPv4' && !net.internal) return net.address;
-    }
-  }
   return 'localhost';
 }
 

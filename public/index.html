@@ -10,8 +10,15 @@
 <body>
 
 <header>
-  <h1>🎱 Pool League</h1>
+  <h1>🎱 <span id="league-title">Pool</span></h1>
   <p>ELO-rated leaderboard — track every game, rank every player</p>
+  <div id="league-switcher" class="league-switcher"></div>
+  <div id="new-league-form" class="new-league-form" style="display:none">
+    <input type="text" id="new-league-name" placeholder="League name…" maxlength="40"
+           onkeydown="if(event.key==='Enter') addLeague()" />
+    <button class="btn" onclick="addLeague()">Create</button>
+  </div>
+  <div class="msg" id="league-msg"></div>
   <nav>
     <a class="nav-link" href="/records.html">🏅 Records</a>
   </nav>
