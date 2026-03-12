@@ -48,14 +48,20 @@ function renderProfile(p) {
     streakClass = p.currentStreak.type === 'W' ? 'win' : 'loss';
   }
 
-  // Last 5 pills
-  const last5Html = p.last5.length
-    ? p.last5.map(g => `
-        <div class="result-pill">
+  // All results
+  const resultsHtml = p.results.length
+    ? p.results.map(g => {
+        const date = g.playedAt
+          ? new Date(g.playedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+          : '';
+        return `
+        <div class="result-row">
           <span class="badge ${g.result}">${g.result}</span>
-          <span class="opp">${esc(g.opponent)}</span>
+          <span class="opp">vs ${esc(g.opponent)}</span>
+          <span class="result-date">${date}</span>
           <span class="chg ${g.ratingChange >= 0 ? 'pos' : 'neg'}">${g.ratingChange >= 0 ? '+' : ''}${g.ratingChange}</span>
-        </div>`).join('')
+        </div>`;
+      }).join('')
     : '<span style="color:var(--muted);font-size:0.85rem">No games yet</span>';
 
   document.getElementById('root').innerHTML = `
@@ -100,35 +106,35 @@ function renderProfile(p) {
       </div>
     </div>
 
-    <!-- Last 5 + Streaks -->
-    <div class="two-col">
-      <div class="card">
-        <h3>Last 5 Results</h3>
-        <div class="last5-row">${last5Html}</div>
-      </div>
-      <div class="card">
-        <h3>Streaks</h3>
-        <div class="streak-row">
-          <div class="streak-item">
-            <span class="s-label">Current streak</span>
-            <span class="s-val ${streakClass}">${streakLabel}</span>
-          </div>
-          <div class="streak-item">
-            <span class="s-label">Longest winning streak</span>
-            <span class="s-val win">${p.longestWinStreak} Win${p.longestWinStreak !== 1 ? 's' : ''}</span>
-          </div>
-          <div class="streak-item">
-            <span class="s-label">Longest losing streak</span>
-            <span class="s-val loss">${p.longestLossStreak} Loss${p.longestLossStreak !== 1 ? 'es' : ''}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- ELO History Chart -->
     <div class="chart-card">
       <h3>ELO Rating History</h3>
       <div class="chart-wrap"><canvas id="elo-chart"></canvas></div>
+    </div>
+
+    <!-- Streaks -->
+    <div class="card" style="margin-bottom:20px">
+      <h3>Streaks</h3>
+      <div class="streak-row">
+        <div class="streak-item">
+          <span class="s-label">Current streak</span>
+          <span class="s-val ${streakClass}">${streakLabel}</span>
+        </div>
+        <div class="streak-item">
+          <span class="s-label">Longest winning streak</span>
+          <span class="s-val win">${p.longestWinStreak} Win${p.longestWinStreak !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="streak-item">
+          <span class="s-label">Longest losing streak</span>
+          <span class="s-val loss">${p.longestLossStreak} Loss${p.longestLossStreak !== 1 ? 'es' : ''}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results History -->
+    <div class="card" style="margin-bottom:20px">
+      <h3>Results History</h3>
+      <div class="results-scroll">${resultsHtml}</div>
     </div>
   `;
 

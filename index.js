@@ -85,8 +85,8 @@ app.get('/api/players/:id/profile', (req, res) => {
   const sorted = [...db.players].sort((a, b) => b.rating - a.rating);
   const position = sorted.findIndex(p => p.id === player.id) + 1;
 
-  // Last 5 results
-  const last5 = games.slice(-5).reverse().map(g => ({
+  // All results, most recent first
+  const allResults = [...games].reverse().map(g => ({
     result: g.winnerId === player.id ? 'W' : 'L',
     opponent: g.winnerId === player.id
       ? (db.players.find(p => p.id === g.loserId)  || { name: 'Unknown' }).name
@@ -155,7 +155,7 @@ app.get('/api/players/:id/profile', (req, res) => {
     losses: player.losses,
     played: total,
     winPct: total ? Math.round((player.wins / total) * 100) : 0,
-    last5,
+    results: allResults,
     longestWinStreak: longestWin,
     longestLossStreak: longestLoss,
     currentStreak,
