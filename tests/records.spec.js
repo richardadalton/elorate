@@ -86,7 +86,9 @@ test.describe('Records Page — Content', () => {
 
   test('record holder name is a link to their profile page', async ({ page }) => {
     await gotoRecords(page);
-    const link = page.locator('.record-card .player-link').first();
+    // Scope to the Longest Winning Streak card where Alice is guaranteed to be the sole holder
+    const card = page.locator('.record-card', { hasText: 'Longest Winning Streak' });
+    const link = card.locator('.player-link').first();
     await expect(link).toHaveAttribute('href', /player\.html/);
   });
 

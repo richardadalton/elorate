@@ -134,12 +134,12 @@ A badges/achievements system was designed and implemented to reward player miles
 | File | Tests | What it covers |
 |------|-------|----------------|
 | `tests/helpers.js` | — | Shared utilities: `createTestLeague`, `addPlayer`, `recordGame` |
-| `tests/api.spec.js` | 44 | All API endpoints — Leagues, Players, Games, Profile, Records, ELO maths, King of the Hill, Badges |
-| `tests/home.spec.js` | 20 | Home page UI — league table, add player form, record game form, game history, league switcher |
+| `tests/api.spec.js` | 48 | All API endpoints — Leagues, Players, Games, Profile, Records, ELO maths, King of the Hill, Badges, Form guide |
+| `tests/home.spec.js` | 24 | Home page UI — league table, form guide, add player form, record game form, game history, league switcher |
 | `tests/player.spec.js` | 20 | Player profile UI — hero section, stats grid, badges, streaks, results history, ELO chart, 404 handling |
 | `tests/records.spec.js` | 14 | Records page UI — layout, all 4 record cards, player links, empty state |
 
-**Total: 98 tests, all passing.**
+**Total: 106 tests, all passing.**
 
 #### npm scripts added
 
@@ -157,7 +157,7 @@ npm run test:report # view HTML report after a run
 - **Backend:** A shared `addHolder()` helper resets the array when a new high value is found, and appends to it on an exact tie.
 - **Frontend:** `playerLink()` replaced with `playerLinks()`, which maps the array to comma-separated profile links rendered inside the record card.
 - **CSS:** `.record-holder` updated to `flex-wrap` so multiple names wrap neatly; `.holder-sep` styles the comma separators.
-- **Tests:** API test suite updated to assert the `holders` array shape and added a test confirming both tied players appear when they share the `mostGamesPlayed` record (98 tests total).
+- **Tests:** API test suite updated to assert the `holders` array shape and added a test confirming both tied players appear when they share the `mostGamesPlayed` record.
 
 ---
 
@@ -181,6 +181,17 @@ The `README.md` was updated multiple times throughout development to reflect:
 - Testing section with commands and coverage table
 - Tied record holders feature
 - Comma spacing between tied names
+- Form guide in the league table
+
+---
+
+### 13. Form Guide in the League Table
+
+- **Decision:** Added a form guide column to the home page league table showing each player's last 5 results as small coloured squares — green for a win, red for a loss.
+- **Backend:** `GET /api/players` now includes a `form` array on each player object — up to 5 entries of `'W'` or `'L'`, taken from the tail of the player's chronological game history.
+- **Frontend:** Each table row renders up to 5 `<span class="form-sq form-w/form-l">` elements with a "Win"/"Loss" tooltip. Players with no games show a `—` placeholder. A **Form** column header was added.
+- **CSS:** `.form-sq` is a 10×10px rounded square with `2px` margin between squares. `.form-w` uses `var(--green)` and `.form-l` uses `var(--red)`.
+- **Tests:** 4 new API tests (form array present, only W/L values, capped at 5, reflects correct results) and 5 new UI tests (column header, squares visible, correct colour classes). Total: 106 tests.
 
 ---
 
@@ -192,7 +203,7 @@ The `README.md` was updated multiple times throughout development to reflect:
 | Frontend | Vanilla HTML, CSS, JavaScript |
 | Data storage | JSON files (one per league, in `data/`) |
 | Charts | Chart.js (ELO history chart on profile page) |
-| Testing | Playwright (API + UI, 98 tests) |
+| Testing | Playwright (API + UI, 106 tests) |
 | Version control | Git + GitHub |
 
 ---

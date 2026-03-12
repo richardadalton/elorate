@@ -226,7 +226,16 @@ app.get('/api/players', (req, res) => {
   const db = getDb(league);
   const sorted = [...db.players].sort((a, b) => b.rating - a.rating);
   const kingId = computeKingOfTheHill(db);
-  res.json({ players: sorted, kingId });
+
+  const players = sorted.map(p => {
+    const games = db.games
+      .filter(g => g.winnerId === p.id || g.loserId === p.id)
+      .slice(-5)
+      .map(g => g.winnerId === p.id ? 'W' : 'L');
+    return { ...p, form: games };
+  });
+
+  res.json({ players, kingId });
 });
 
 // POST /api/players?league=pool

@@ -56,6 +56,25 @@ test.describe('Home Page — League Table', () => {
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute('href', /records\.html/);
   });
+
+  test('form guide column header is shown', async ({ page }) => {
+    await expect(page.locator('thead th.form-head')).toContainText('Form');
+  });
+
+  test('form guide squares are shown for players who have played', async ({ page }) => {
+    // At least one .form-sq square should exist (Alice beat Bob in beforeAll)
+    await expect(page.locator('.form-sq').first()).toBeVisible();
+  });
+
+  test('form guide win square has green background class', async ({ page }) => {
+    // Alice's last result was a win — she should have a .form-w square
+    await expect(page.locator('.form-w').first()).toBeVisible();
+  });
+
+  test('form guide loss square has red background class', async ({ page }) => {
+    // Bob's last result was a loss — he should have a .form-l square
+    await expect(page.locator('.form-l').first()).toBeVisible();
+  });
 });
 
 test.describe('Home Page — Add Player', () => {

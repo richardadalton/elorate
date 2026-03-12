@@ -8,7 +8,7 @@ A local multiplayer league tracker with **ELO ratings**, player profiles, game h
 
 - **Multiple leagues** — each league has its own separate data file; switch between leagues from the home page or create new ones on the fly
 - **ELO rating system** — ratings update automatically after every game
-- **League table** — players ranked by current ELO rating, with 👑 crown marking the King of the Hill
+- **League table** — players ranked by current ELO rating, with 👑 crown marking the King of the Hill and a **form guide** showing the last 5 results as green/red squares
 - **Player profiles** — detailed stats per player including:
   - Win/loss record & win percentage
   - Current streak, longest win streak, longest loss streak
@@ -130,12 +130,12 @@ npm run test:ui
 npm run test:report
 ```
 
-### What's covered (98 tests)
+### What's covered (106 tests)
 
 | Suite | Tests | Covers |
 |-------|-------|--------|
-| `api.spec.js` | 44 | Leagues, Players, Games, Profile, Records, ELO maths, King of the Hill, Badges |
-| `home.spec.js` | 20 | League table, Add player, Record game, Game history, League switcher |
+| `api.spec.js` | 48 | Leagues, Players, Games, Profile, Records, ELO maths, King of the Hill, Badges, Form guide |
+| `home.spec.js` | 24 | League table, Form guide, Add player, Record game, Game history, League switcher |
 | `player.spec.js` | 20 | Hero section, Stats grid, Badges, Streaks, Results history, ELO chart, 404 |
 | `records.spec.js` | 14 | Layout, All 4 record cards, Holder links, Empty state |
 

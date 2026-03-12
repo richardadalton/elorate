@@ -194,6 +194,34 @@ tbody td.num { text-align: right; }
 
 .win-pct { color: var(--muted); font-size: 0.85rem; }
 
+/* ── Form guide ── */
+.form-head {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.form-cell {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.form-sq {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin: 0 1.5px;
+  vertical-align: middle;
+}
+
+.form-w { background: var(--green); }
+.form-l { background: var(--red); }
+
+.form-none {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 /* ── Form shared ── */
 .form-row {
   display: flex;

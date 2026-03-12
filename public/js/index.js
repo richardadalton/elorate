@@ -111,6 +111,9 @@ async function loadLeague() {
     const total = p.wins + p.losses;
     const pct = total ? Math.round((p.wins / total) * 100) : 0;
     const crown = p.id === kingId ? ' <span class="koth-crown" title="King of the Hill">👑</span>' : '';
+    const formHtml = (p.form && p.form.length)
+      ? p.form.map(r => `<span class="form-sq ${r === 'W' ? 'form-w' : 'form-l'}" title="${r === 'W' ? 'Win' : 'Loss'}"></span>`).join('')
+      : '<span class="form-none">—</span>';
     return `
       <tr>
         <td class="pos ${posClass}">${rank}</td>
@@ -119,6 +122,7 @@ async function loadLeague() {
         <td class="num">${p.wins}</td>
         <td class="num">${p.losses}</td>
         <td class="num win-pct">${total ? pct + '%' : '—'}</td>
+        <td class="form-cell">${formHtml}</td>
       </tr>`;
   }).join('');
 
@@ -127,7 +131,7 @@ async function loadLeague() {
       <thead>
         <tr>
           <th>#</th><th>Player</th>
-          <th class="num">ELO</th><th class="num">W</th><th class="num">L</th><th class="num">Win%</th>
+          <th class="num">ELO</th><th class="num">W</th><th class="num">L</th><th class="num">Win%</th><th class="form-head">Form</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>

@@ -121,6 +121,38 @@ test.describe('Players API', () => {
     expect(sorted[0].rating).toBeGreaterThanOrEqual(sorted[1].rating);
   });
 
+  test('GET /api/players includes a form array for each player', async ({ request }) => {
+    const { players } = await (await request.get(`${BASE}/api/players?league=${league}`)).json();
+    for (const p of players) {
+      expect(Array.isArray(p.form)).toBe(true);
+    }
+  });
+
+  test('form array contains only W and L values', async ({ request }) => {
+    const { players } = await (await request.get(`${BASE}/api/players?league=${league}`)).json();
+    for (const p of players) {
+      for (const r of p.form) {
+        expect(['W', 'L']).toContain(r);
+      }
+    }
+  });
+
+  test('form array is capped at 5 entries', async ({ request }) => {
+    const { players } = await (await request.get(`${BASE}/api/players?league=${league}`)).json();
+    for (const p of players) {
+      expect(p.form.length).toBeLessThanOrEqual(5);
+    }
+  });
+
+  test('form reflects recent results correctly', async ({ request }) => {
+    // In this league Alice beat Bob once — Alice's last result should be W, Bob's L
+    const { players } = await (await request.get(`${BASE}/api/players?league=${league}`)).json();
+    const alice = players.find(p => p.name === 'Alice');
+    const bob   = players.find(p => p.name === 'Bob');
+    expect(alice.form[alice.form.length - 1]).toBe('W');
+    expect(bob.form[bob.form.length - 1]).toBe('L');
+  });
+
   test('GET /api/players returns 404 for unknown league', async ({ request }) => {
     const res = await request.get(`${BASE}/api/players?league=doesnotexist_xyz`);
     expect(res.status()).toBe(404);
