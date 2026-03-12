@@ -3,8 +3,8 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = 3000;
-const DATA_DIR = path.join(__dirname, 'data');
+const PORT = process.env.TEST_PORT ? parseInt(process.env.TEST_PORT) : 3000;
+const DATA_DIR = process.env.TEST_DATA_DIR || path.join(__dirname, 'data');
 
 // ── Persistence ───────────────────────────────────────────────────────────────
 
@@ -238,7 +238,7 @@ app.post('/api/players', (req, res) => {
   const duplicate = db.players.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
   if (duplicate) return res.status(400).json({ error: 'Player already exists' });
 
-  const player = { id: Date.now().toString(), name: name.trim(), rating: 1000, wins: 0, losses: 0 };
+  const player = { id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name: name.trim(), rating: 1000, wins: 0, losses: 0 };
   db.players.push(player);
   saveDb(league, db);
   res.status(201).json(player);
@@ -371,7 +371,7 @@ app.post('/api/games', (req, res) => {
 
   const { newWinnerRating, newLoserRating, change } = calcElo(winner.rating, loser.rating);
   const game = {
-    id: Date.now().toString(),
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     winnerId: winner.id, loserId: loser.id,
     winnerRatingBefore: winner.rating, loserRatingBefore: loser.rating,
     winnerRatingAfter: newWinnerRating, loserRatingAfter: newLoserRating,

@@ -1,0 +1,184 @@
+/**
+ * UI tests — Player Profile page (player.html)
+ */
+
+const { test, expect } = require('@playwright/test');
+const { BASE, createTestLeague, addPlayer, recordGame } = require('./helpers');
+
+let league, alice, bob;
+
+test.beforeAll(async ({ request }) => {
+  league = await createTestLeague(request, '_playerpage');
+  alice  = await addPlayer(request, league, 'Alice');
+  bob    = await addPlayer(request, league, 'Bob');
+
+  // Alice wins 3, loses 1
+  await recordGame(request, league, alice.id, bob.id);
+  await recordGame(request, league, alice.id, bob.id);
+  await recordGame(request, league, alice.id, bob.id);
+  await recordGame(request, league, bob.id, alice.id);
+});
+
+async function gotoAliceProfile(page) {
+  await page.goto(`${BASE}/player.html?id=${alice.id}&league=${league}`);
+  // Wait for the profile to render (the hero section)
+  await page.waitForSelector('.hero', { timeout: 10_000 });
+}
+
+test.describe('Player Profile — Hero section', () => {
+  test('shows player name', async ({ page }) => {
+    await gotoAliceProfile(page);
+    await expect(page.locator('.hero-name')).toContainText('Alice');
+  });
+
+  test('shows ELO rating', async ({ page }) => {
+    await gotoAliceProfile(page);
+    await expect(page.locator('.hero-rating')).toBeVisible();
+    await expect(page.locator('.rating-value')).toBeVisible();
+  });
+
+  test('shows league position', async ({ page }) => {
+    await gotoAliceProfile(page);
+    await expect(page.locator('.hero-position')).toBeVisible();
+  });
+
+  test('back link returns to home page', async ({ page }) => {
+    await gotoAliceProfile(page);
+    const backLink = page.locator('.back-link');
+    await expect(backLink).toBeVisible();
+    await expect(backLink).toHaveAttribute('href', /\//);
+  });
+});
+
+test.describe('Player Profile — Stats grid', () => {
+  test('shows correct games played', async ({ page }) => {
+    await gotoAliceProfile(page);
+    // Games Played stat card should show 4
+    const statCards = page.locator('.stat-card');
+    const labels = await statCards.allTextContents();
+    const gamesPlayedCard = labels.find(t => t.includes('Games Played'));
+    expect(gamesPlayedCard).toContain('4');
+  });
+
+  test('shows correct wins and losses', async ({ page }) => {
+    await gotoAliceProfile(page);
+    const statCards = page.locator('.stat-card');
+    const labels = await statCards.allTextContents();
+    const winsCard   = labels.find(t => t.includes('Wins') && !t.includes('Games'));
+    const lossesCard = labels.find(t => t.includes('Losses'));
+    expect(winsCard).toContain('3');
+    expect(lossesCard).toContain('1');
+  });
+
+  test('shows win rate', async ({ page }) => {
+    await gotoAliceProfile(page);
+    const statCards = page.locator('.stat-card');
+    const labels = await statCards.allTextContents();
+    const winRateCard = labels.find(t => t.includes('Win Rate'));
+    expect(winRateCard).toContain('75%');
+  });
+});
+
+test.describe('Player Profile — Badges', () => {
+  test('badges section is visible', async ({ page }) => {
+    await gotoAliceProfile(page);
+    await expect(page.locator('.badges-row')).toBeVisible();
+  });
+
+  test('first_win badge is shown as earned', async ({ page }) => {
+    await gotoAliceProfile(page);
+    const badges = page.locator('.badge-item.earned');
+    const count = await badges.count();
+    expect(count).toBeGreaterThan(0);
+
+    // Find the First Win badge
+    const badgeTexts = await page.locator('.badge-item.earned .badge-name').allTextContents();
+    expect(badgeTexts).toContain('First Win');
+  });
+
+  test('unearned badges show lock icon', async ({ page }) => {
+    await gotoAliceProfile(page);
+    const locked = page.locator('.badge-item.locked .badge-icon');
+    // 4 games played — games_50, games_100 should be locked
+    const count = await locked.count();
+    expect(count).toBeGreaterThan(0);
+    // Check that at least one locked badge shows the lock emoji
+    const firstLockedIcon = await locked.first().textContent();
+    expect(firstLockedIcon).toContain('🔒');
+  });
+});
+
+test.describe('Player Profile — Streaks', () => {
+  test('streaks card is visible', async ({ page }) => {
+    await gotoAliceProfile(page);
+    await expect(page.locator('text=Streaks')).toBeVisible();
+  });
+
+  test('shows longest winning streak', async ({ page }) => {
+    await gotoAliceProfile(page);
+    await expect(page.locator('text=Longest winning streak')).toBeVisible();
+    // Alice had a 3-win streak
+    const streakRow = page.locator('.streak-item', { hasText: 'Longest winning streak' });
+    await expect(streakRow).toContainText('3');
+  });
+});
+
+test.describe('Player Profile — Results History', () => {
+  test('results history card is visible', async ({ page }) => {
+    await gotoAliceProfile(page);
+    await expect(page.locator('text=Results History')).toBeVisible();
+  });
+
+  test('results are shown in a scrollable list', async ({ page }) => {
+    await gotoAliceProfile(page);
+    await expect(page.locator('.results-scroll')).toBeVisible();
+    const rows = page.locator('.result-row');
+    expect(await rows.count()).toBe(4);
+  });
+
+  test('each result row shows W or L badge', async ({ page }) => {
+    await gotoAliceProfile(page);
+    const badges = page.locator('.result-row .badge');
+    const count = await badges.count();
+    expect(count).toBe(4);
+
+    for (let i = 0; i < count; i++) {
+      const text = await badges.nth(i).textContent();
+      expect(['W', 'L']).toContain(text.trim());
+    }
+  });
+
+  test('most recent result is shown first', async ({ page }) => {
+    await gotoAliceProfile(page);
+    // Last game was a loss (Bob beat Alice)
+    const firstRow = page.locator('.result-row').first();
+    await expect(firstRow.locator('.badge')).toContainText('L');
+  });
+});
+
+test.describe('Player Profile — ELO Chart', () => {
+  test('chart canvas is rendered', async ({ page }) => {
+    await gotoAliceProfile(page);
+    await expect(page.locator('#elo-chart')).toBeVisible();
+  });
+
+  test('chart card heading is visible', async ({ page }) => {
+    await gotoAliceProfile(page);
+    await expect(page.locator('text=ELO Rating History')).toBeVisible();
+  });
+});
+
+test.describe('Player Profile — 404 handling', () => {
+  test('shows not found message for invalid player id', async ({ page }) => {
+    await page.goto(`${BASE}/player.html?id=nonexistent_id&league=${league}`);
+    await page.waitForSelector('#root');
+    await expect(page.locator('#root')).toContainText(/not found/i, { timeout: 5_000 });
+  });
+
+  test('shows not found message when no id is provided', async ({ page }) => {
+    await page.goto(`${BASE}/player.html?league=${league}`);
+    await page.waitForSelector('#root');
+    await expect(page.locator('#root')).toContainText(/not found/i, { timeout: 5_000 });
+  });
+});
+

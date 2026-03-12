@@ -4,10 +4,16 @@
   "description": "Pool league tracker with ELO ratings",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report"
   },
   "dependencies": {
     "express": "^4.18.2"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
 }

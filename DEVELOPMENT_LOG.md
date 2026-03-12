@@ -23,6 +23,7 @@ The project started as a **Pool league tracker** (`pool_league`) — a simple lo
 - Every new player starts at a rating of **1000**.
 - After each game, the winner gains points and the loser loses an equal number of points.
 - The amount transferred depends on the rating difference — beating a higher-rated opponent earns more points than beating a lower-rated one.
+- Equal-rated players exchange exactly **16 points** per game.
 
 #### Longest Winning Streak Calculation
 - The streak is calculated by iterating through a player's full game history in chronological order.
@@ -95,20 +96,20 @@ A badges/achievements system was designed and implemented to reward player miles
 | Badge | Criteria |
 |-------|----------|
 | **First Win** | Win your first game |
-| **10 Games Played** | Play 10 games |
-| **50 Games Played** | Play 50 games |
-| **100 Games Played** | Play 100 games |
+| **Veteran** (10 Games Played) | Play 10 games |
+| **Seasoned** (50 Games Played) | Play 50 games |
+| **Centurion** (100 Games Played) | Play 100 games |
 | **Record Holder** | Hold at least one all-time record *(originally named "Record Breaker")* |
 | **Grand Slam** | Hold **all** records simultaneously *(originally named "Legend")* |
-| **Beat the Top Rated Player** | Win a game against the current highest-rated player |
-| **King of the Hill** | Win the first game ever played, or beat the reigning King of the Hill |
+| **Giant Killer** | Win a game against the current highest-rated player |
+| **King of the Hill** | Win the first ever game or beat the reigning King of the Hill |
 
 #### Badge Naming Changes
 - `Record Breaker` → renamed to **Record Holder**
 - `Legend` → renamed to **Grand Slam**
 
 #### Grand Slam Icon
-- Changed to a **trophy** icon.
+- Changed to a **trophy** 🏆 icon.
 
 ---
 
@@ -121,15 +122,46 @@ A badges/achievements system was designed and implemented to reward player miles
 
 ---
 
-### 9. README Updates
+### 9. Playwright Test Suite
+
+- **Decision:** Added a full end-to-end test suite using [Playwright](https://playwright.dev/).
+- **Approach:** Tests spin up a separate server instance on **port 3001** using a **temporary data directory** (`/tmp/pool_league_test_data`), completely isolated from real league data.
+- The server supports `TEST_PORT` and `TEST_DATA_DIR` environment variables to enable this isolation without any code branching.
+- Player and game IDs were changed from `Date.now()` alone to `Date.now() + random suffix` to prevent ID collisions when multiple records are created in quick succession during tests.
+
+#### Test Files
+
+| File | Tests | What it covers |
+|------|-------|----------------|
+| `tests/helpers.js` | — | Shared utilities: `createTestLeague`, `addPlayer`, `recordGame` |
+| `tests/api.spec.js` | 43 | All API endpoints — Leagues, Players, Games, Profile, Records, ELO maths, King of the Hill, Badges |
+| `tests/home.spec.js` | 20 | Home page UI — league table, add player form, record game form, game history, league switcher |
+| `tests/player.spec.js` | 20 | Player profile UI — hero section, stats grid, badges, streaks, results history, ELO chart, 404 handling |
+| `tests/records.spec.js` | 14 | Records page UI — layout, all 4 record cards, player links, empty state |
+
+**Total: 97 tests, all passing.**
+
+#### npm scripts added
+
+```bash
+npm test            # run all tests headless
+npm run test:ui     # open Playwright interactive UI
+npm run test:report # view HTML report after a run
+```
+
+---
+
+### 10. README Updates
 
 The `README.md` was updated multiple times throughout development to reflect:
 - The multi-league architecture
 - New pages (records, player profiles)
+- Badges and King of the Hill features
 - Full API reference
 - ELO system explanation
 - Data storage approach
-- Project structure
+- Project structure (including test files)
+- Testing section with commands and coverage table
 
 ---
 
@@ -140,7 +172,8 @@ The `README.md` was updated multiple times throughout development to reflect:
 | Backend | Node.js + Express |
 | Frontend | Vanilla HTML, CSS, JavaScript |
 | Data storage | JSON files (one per league, in `data/`) |
-| Charts | (ELO history chart on profile page) |
+| Charts | Chart.js (ELO history chart on profile page) |
+| Testing | Playwright (API + UI, 97 tests) |
 | Version control | Git + GitHub |
 
 ---
@@ -149,29 +182,36 @@ The `README.md` was updated multiple times throughout development to reflect:
 
 ```
 pool_league/
-├── index.js              # Express server & all API routes
+├── index.js               # Express server & all API routes
 ├── package.json
+├── playwright.config.js   # Playwright configuration (port 3001, isolated data dir)
 ├── README.md
-├── DEVELOPMENT_LOG.md    # This file
+├── DEVELOPMENT_LOG.md     # This file
 ├── data/
-│   ├── pool.json         # Pool league data
-│   ├── chess.json        # Chess league data
-│   ├── darts.json        # Darts league data
-│   ├── backgammon.json   # Backgammon league data
-│   └── doh.json          # Example/test league
+│   ├── pool.json          # Pool league data
+│   ├── chess.json         # Chess league data
+│   ├── darts.json         # Darts league data
+│   ├── backgammon.json    # Backgammon league data
+│   └── doh.json           # Example/test league
+├── tests/
+│   ├── helpers.js         # Shared test utilities
+│   ├── api.spec.js        # API tests
+│   ├── home.spec.js       # Home page UI tests
+│   ├── player.spec.js     # Player profile UI tests
+│   └── records.spec.js    # Records page UI tests
 └── public/
-    ├── index.html        # League table, record game, league switcher
-    ├── player.html       # Individual player profile
-    ├── records.html      # All-time records page
+    ├── index.html         # League table, record game, league switcher
+    ├── player.html        # Individual player profile
+    ├── records.html       # All-time records page
     ├── css/
-    │   ├── main.css      # Shared styles
+    │   ├── main.css       # Shared styles
     │   ├── index.css
     │   ├── player.css
     │   └── records.css
     └── js/
-        ├── index.js      # Home page logic
-        ├── player.js     # Profile page logic
-        └── records.js    # Records page logic
+        ├── index.js       # Home page logic
+        ├── player.js      # Profile page logic
+        └── records.js     # Records page logic
 ```
 
 ---
