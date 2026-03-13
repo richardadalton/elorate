@@ -10,7 +10,11 @@ const BASE = process.env.TEST_BASE_URL || 'http://localhost:3001';
  * Returns the league slug.
  */
 async function createTestLeague(request, suffix = '') {
-  const name = `testleague_${Date.now()}${suffix}`;
+  // Keep name short — validLeague enforces a 40-char max.
+  // Use last 8 digits of timestamp + 4-char random to guarantee uniqueness.
+  const ts   = Date.now().toString().slice(-8);
+  const rand = Math.random().toString(36).slice(2, 6);
+  const name = `tl_${ts}_${rand}${suffix}`;
   const res = await request.post(`${BASE}/api/leagues`, {
     data: { name },
     headers: { 'Content-Type': 'application/json' },

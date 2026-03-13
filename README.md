@@ -38,7 +38,7 @@ A local multiplayer league tracker with **ELO ratings**, player profiles, game h
 
 - **Backend:** Node.js with [Express](https://expressjs.com/)
 - **Frontend:** Vanilla HTML, CSS, and JavaScript
-- **Data storage:** One JSON file per league in `data/` (e.g. `data/pool.json`, `data/chess.json`)
+- **Data storage:** Append-only JSONL files per league in `data/<league>/`, with monthly snapshots and an in-memory cache
 - **Testing:** [Playwright](https://playwright.dev/) (end-to-end API & UI tests)
 
 ---
@@ -85,8 +85,13 @@ pool_league/
 ├── package.json
 ├── playwright.config.js   # Playwright test configuration
 ├── data/
-│   ├── pool.json          # Pool league data
-│   └── chess.json         # Chess league data (example)
+│   ├── pool/
+│   │   ├── players.jsonl  # Pool player registrations (append-only)
+│   │   ├── games.jsonl    # Pool game results (append-only)
+│   │   └── snapshots/     # Monthly derived-state snapshots
+│   └── chess/
+│       ├── players.jsonl
+│       └── games.jsonl
 ├── tests/
 │   ├── helpers.js         # Shared test utilities
 │   ├── api.spec.js        # API tests (leagues, players, games, records, badges, KOTH)
@@ -157,6 +162,7 @@ All game/player routes accept a `?league=` query parameter (defaults to `pool`).
 | `GET` | `/api/games?league=pool` | Get all games (most recent first) |
 | `POST` | `/api/games?league=pool` | Record a game result `{ winnerId, loserId }` |
 | `GET` | `/api/records?league=pool` | Get all-time records for a league |
+| `POST` | `/api/admin/snapshot?league=pool` | Force a snapshot of the current derived state |
 
 ---
 
@@ -173,4 +179,24 @@ The league uses the standard **ELO formula** with a K-factor of **32**.
 
 ## Data Storage
 
-Each league is stored as a separate JSON file in the `data/` directory. Files are created automatically when a new league is added. Back up the `data/` folder regularly to avoid losing league history.
+Each league uses an **append-only log** stored in its own sub-directory under `data/`:
+
+```
+data/
+  pool/
+    players.jsonl      ← one player registration per line (append-only)
+    games.jsonl        ← one game result per line (append-only)
+    snapshots/
+      2026-03-13.json  ← monthly snapshot of derived state
+  chess/
+    players.jsonl
+    games.jsonl
+```
+
+- **Writes are atomic** — each new player or game is a single `appendFileSync` call, eliminating read-modify-write race conditions.
+- **Ratings are never stored** — they are always derived by replaying the game log, so they can never become stale or corrupted.
+- **Snapshots** are taken automatically on startup if the latest is ≥ 30 days old. On restart, only games logged *after* the snapshot are replayed, keeping cold-start time bounded.
+- **In-memory cache** — each league's derived state is cached in memory after the first request. Switching between leagues never triggers a re-replay. Cache entries are updated in-place on every write.
+- A manual snapshot can be forced via `POST /api/admin/snapshot?league=pool`.
+- Back up the entire `data/` folder regularly to preserve league history.
+

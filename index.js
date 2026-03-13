@@ -1,44 +1,100 @@
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
+const fs      = require('fs');
+const path    = require('path');
+const os      = require('os');
 
-const app = express();
+const app  = express();
 const PORT = process.env.TEST_PORT ? parseInt(process.env.TEST_PORT) : 3000;
 const DATA_DIR = process.env.TEST_DATA_DIR || path.join(__dirname, 'data');
 
-// ── Persistence ───────────────────────────────────────────────────────────────
+// ── Append-only persistence ───────────────────────────────────────────────────
+//
+// Layout on disk (one sub-directory per league):
+//   data/<league>/players.jsonl    — one JSON object per line, append-only
+//   data/<league>/games.jsonl      — one JSON object per line, append-only
+//   data/<league>/snapshots/       — periodic snapshots of derived state
+//     <ISO-date>.json              — { snapshotAt, players: [{id,name,registeredAt,rating,wins,losses}] }
+//
+// In memory (leagueCache Map):
+//   { players, games }             — fully derived state, invalidated only on
+//                                    app restart; updated in-place on writes.
 
-function dbPath(league) {
-  return path.join(DATA_DIR, `${league}.json`);
+function leagueDir(league) {
+  return path.join(DATA_DIR, league);
+}
+function playersPath(league) {
+  return path.join(leagueDir(league), 'players.jsonl');
+}
+function gamesPath(league) {
+  return path.join(leagueDir(league), 'games.jsonl');
+}
+function snapshotsDir(league) {
+  return path.join(leagueDir(league), 'snapshots');
 }
 
-function getDb(league) {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  const p = dbPath(league);
-  if (!fs.existsSync(p)) {
-    const initial = { players: [], games: [] };
-    fs.writeFileSync(p, JSON.stringify(initial, null, 2));
-    return initial;
-  }
-  return JSON.parse(fs.readFileSync(p, 'utf8'));
+function ensureLeagueDir(league) {
+  const dir = leagueDir(league);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const sd = snapshotsDir(league);
+  if (!fs.existsSync(sd)) fs.mkdirSync(sd, { recursive: true });
+  if (!fs.existsSync(playersPath(league))) fs.writeFileSync(playersPath(league), '');
+  if (!fs.existsSync(gamesPath(league)))   fs.writeFileSync(gamesPath(league),   '');
 }
 
-function saveDb(league, db) {
-  fs.writeFileSync(dbPath(league), JSON.stringify(db, null, 2));
+/** Read all JSON lines from a file, skipping blank lines. */
+function readJsonl(filePath) {
+  if (!fs.existsSync(filePath)) return [];
+  return fs.readFileSync(filePath, 'utf8')
+    .split('\n')
+    .filter(l => l.trim())
+    .map(l => JSON.parse(l));
 }
 
-function getLeagues() {
-  if (!fs.existsSync(DATA_DIR)) return [];
-  return fs.readdirSync(DATA_DIR)
+/** Append a single object as a JSON line. */
+function appendJsonl(filePath, obj) {
+  fs.appendFileSync(filePath, JSON.stringify(obj) + '\n');
+}
+
+// ── Snapshots ─────────────────────────────────────────────────────────────────
+
+/** Return the most recent snapshot, or null. */
+function loadLatestSnapshot(league) {
+  const dir = snapshotsDir(league);
+  if (!fs.existsSync(dir)) return null;
+  const files = fs.readdirSync(dir)
     .filter(f => f.endsWith('.json'))
-    .map(f => f.replace('.json', ''));
+    .sort(); // ISO date filenames sort chronologically
+  if (!files.length) return null;
+  try {
+    return JSON.parse(fs.readFileSync(path.join(dir, files[files.length - 1]), 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
-function validLeague(league) {
-  return typeof league === 'string' && /^[a-z0-9_-]+$/i.test(league) && league.length <= 40;
+/** Write a snapshot of the current fully-derived player state. */
+function writeSnapshot(league, players) {
+  ensureLeagueDir(league);
+  const snapshotAt = new Date().toISOString();
+  const filename   = snapshotAt.slice(0, 10) + '.json'; // one per day max
+  fs.writeFileSync(path.join(snapshotsDir(league), filename), JSON.stringify({ snapshotAt, players }, null, 2));
 }
 
-// ── ELO calculation ───────────────────────────────────────────────────────────
+/** Days elapsed since an ISO date string. */
+function daysSince(isoDate) {
+  return (Date.now() - new Date(isoDate).getTime()) / (1000 * 60 * 60 * 24);
+}
+
+/**
+ * Auto-snapshot: if no snapshot exists or the latest is >= 30 days old, write one.
+ * Called after every cold-load replay.
+ */
+function maybeAutoSnapshot(league, players) {
+  const snap = loadLatestSnapshot(league);
+  if (!snap || daysSince(snap.snapshotAt) >= 30) writeSnapshot(league, players);
+}
+
+// ── ELO ───────────────────────────────────────────────────────────────────────
 
 const K = 32;
 
@@ -53,64 +109,117 @@ function calcElo(winnerRating, loserRating) {
   };
 }
 
+// ── Replay ────────────────────────────────────────────────────────────────────
+
+/**
+ * Given a base player list (from snapshot or raw registrations) and a list of
+ * games to replay, return the fully-derived player state.
+ */
+function replayGames(basePlayers, games) {
+  const state = new Map();
+  for (const p of basePlayers) {
+    state.set(p.id, {
+      id:           p.id,
+      name:         p.name,
+      registeredAt: p.registeredAt,
+      rating:       typeof p.rating  === 'number' ? p.rating  : 1000,
+      wins:         typeof p.wins    === 'number' ? p.wins    : 0,
+      losses:       typeof p.losses  === 'number' ? p.losses  : 0,
+    });
+  }
+  for (const g of games) {
+    const w = state.get(g.winnerId);
+    const l = state.get(g.loserId);
+    if (!w || !l) continue; // orphaned game — skip
+    const { newWinnerRating, newLoserRating } = calcElo(w.rating, l.rating);
+    w.rating = newWinnerRating; w.wins++;
+    l.rating = newLoserRating;  l.losses++;
+  }
+  return [...state.values()];
+}
+
+// ── Per-league in-memory cache ────────────────────────────────────────────────
+//
+// leagueCache: Map<slug, { players: Player[], games: Game[] }>
+//
+// • Populated lazily on first request (cold load = snapshot + replay)
+// • Updated in-place on every write — no re-replay needed
+// • Cleared on app restart
+
+const leagueCache = new Map();
+
+/**
+ * Cold-load: find latest snapshot, load only games after its timestamp,
+ * replay them, cache the result, and auto-snapshot if due.
+ */
+function coldLoad(league) {
+  ensureLeagueDir(league);
+
+  const snap     = loadLatestSnapshot(league);
+  const allGames = readJsonl(gamesPath(league));
+
+  let basePlayers, replaySubset;
+
+  if (snap) {
+    basePlayers  = snap.players;
+    replaySubset = allGames.filter(g => g.playedAt > snap.snapshotAt);
+  } else {
+    const rawPlayers = readJsonl(playersPath(league));
+    basePlayers      = rawPlayers.map(p => ({ ...p, rating: 1000, wins: 0, losses: 0 }));
+    replaySubset     = allGames;
+  }
+
+  const players = replayGames(basePlayers, replaySubset);
+  maybeAutoSnapshot(league, players);
+
+  const entry = { players, games: allGames };
+  leagueCache.set(league, entry);
+  return entry;
+}
+
+/** Get the cached state for a league, loading it if necessary. */
+function getCache(league) {
+  if (!leagueCache.has(league)) coldLoad(league);
+  return leagueCache.get(league);
+}
+
+// ── League helpers ────────────────────────────────────────────────────────────
+
+function getLeagues() {
+  if (!fs.existsSync(DATA_DIR)) return [];
+  return fs.readdirSync(DATA_DIR)
+    .filter(f => {
+      const full = path.join(DATA_DIR, f);
+      return fs.statSync(full).isDirectory() && fs.existsSync(path.join(full, 'games.jsonl'));
+    });
+}
+
+function validLeague(league) {
+  return typeof league === 'string' && /^[a-z0-9_-]+$/i.test(league) && league.length <= 40;
+}
+
+function leagueExists(league) {
+  return fs.existsSync(path.join(leagueDir(league), 'games.jsonl'));
+}
+
 // ── Badges ────────────────────────────────────────────────────────────────────
 
 const BADGE_DEFS = [
-  {
-    id: 'first_win',
-    name: 'First Win',
-    icon: '🥇',
-    desc: 'Win your first game'
-  },
-  {
-    id: 'games_10',
-    name: 'Veteran',
-    icon: '🎮',
-    desc: 'Play 10 games'
-  },
-  {
-    id: 'games_50',
-    name: 'Seasoned',
-    icon: '🏅',
-    desc: 'Play 50 games'
-  },
-  {
-    id: 'games_100',
-    name: 'Centurion',
-    icon: '💯',
-    desc: 'Play 100 games'
-  },
-  {
-    id: 'beat_top',
-    name: 'Giant Killer',
-    icon: '🗡️',
-    desc: 'Beat the top rated player'
-  },
-  {
-    id: 'achieve_record',
-    name: 'Record Holder',
-    icon: '📈',
-    desc: 'Hold at least one all-time record'
-  },
-  {
-    id: 'all_records',
-    name: 'Grand Slam',
-    icon: '🏆',
-    desc: 'Hold all five records simultaneously'
-  },
-  {
-    id: 'king_of_the_hill',
-    name: 'King of the Hill',
-    icon: '👑',
-    desc: 'Win the first ever game or beat the reigning King of the Hill'
-  }
+  { id: 'first_win',        name: 'First Win',        icon: '🥇', desc: 'Win your first game' },
+  { id: 'games_10',         name: 'Veteran',           icon: '🎮', desc: 'Play 10 games' },
+  { id: 'games_50',         name: 'Seasoned',          icon: '🏅', desc: 'Play 50 games' },
+  { id: 'games_100',        name: 'Centurion',         icon: '💯', desc: 'Play 100 games' },
+  { id: 'beat_top',         name: 'Giant Killer',      icon: '🗡️', desc: 'Beat the top rated player' },
+  { id: 'achieve_record',   name: 'Record Holder',     icon: '📈', desc: 'Hold at least one all-time record' },
+  { id: 'all_records',      name: 'Grand Slam',        icon: '🏆', desc: 'Hold all six records simultaneously (sole holder, no ties)' },
+  { id: 'king_of_the_hill', name: 'King of the Hill',  icon: '👑', desc: 'Win the first ever game or beat the reigning King of the Hill' }
 ];
 
 // Walk the game history chronologically — the winner of the first game
 // becomes king; the title transfers whenever the current king loses.
-function computeKingOfTheHill(db) {
-  if (!db.games.length) return null;
-  const sorted = [...db.games].sort((a, b) => a.playedAt.localeCompare(b.playedAt));
+function computeKingOfTheHill(games) {
+  if (!games.length) return null;
+  const sorted = [...games].sort((a, b) => a.playedAt.localeCompare(b.playedAt));
   let kingId = sorted[0].winnerId;
   for (let i = 1; i < sorted.length; i++) {
     const g = sorted[i];
@@ -119,7 +228,72 @@ function computeKingOfTheHill(db) {
   return kingId;
 }
 
-function computeBadges(player, games, db) {
+function computeRecordMaps(players, games) {
+  const recVals = {
+    longestWinStreak: 0, mostGamesPlayed: 0, mostGamesWon: 0,
+    highestEloRating: 0, longestActiveWinStreak: 0, defendTheHill: 0,
+  };
+  const recHolders = {
+    longestWinStreak: new Set(), mostGamesPlayed: new Set(), mostGamesWon: new Set(),
+    highestEloRating: new Set(), longestActiveWinStreak: new Set(), defendTheHill: new Set(),
+  };
+
+  function track(key, value, pid) {
+    if (value > recVals[key])                     { recVals[key] = value; recHolders[key] = new Set([pid]); }
+    else if (value === recVals[key] && value > 0) { recHolders[key].add(pid); }
+  }
+
+  for (const p of players) {
+    const pg = games.filter(g => g.winnerId === p.id || g.loserId === p.id);
+    track('mostGamesPlayed', p.wins + p.losses, p.id);
+    track('mostGamesWon',    p.wins,             p.id);
+
+    let high = 1000;
+    pg.forEach(g => {
+      const r = g.winnerId === p.id ? g.winnerRatingAfter : g.loserRatingAfter;
+      if (r > high) high = r;
+    });
+    track('highestEloRating', high, p.id);
+
+    let cw = 0, bw = 0;
+    pg.forEach(g => {
+      if (g.winnerId === p.id) { cw++; if (cw > bw) bw = cw; }
+      else                     { cw = 0; }
+    });
+    track('longestWinStreak', bw, p.id);
+
+    const lastGame     = pg[pg.length - 1];
+    const activeStreak = (lastGame && lastGame.winnerId === p.id) ? cw : 0;
+    track('longestActiveWinStreak', activeStreak, p.id);
+  }
+
+  // Defend the Hill
+  {
+    const sorted = [...games].sort((a, b) => a.playedAt.localeCompare(b.playedAt));
+    const defendBest = {};
+    if (sorted.length) {
+      let kingId = sorted[0].winnerId;
+      let curDefend = 1;
+      defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
+      for (let i = 1; i < sorted.length; i++) {
+        const g = sorted[i];
+        if (g.winnerId === kingId) {
+          curDefend++;
+          defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
+        } else {
+          kingId    = g.winnerId;
+          curDefend = 1;
+          defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
+        }
+      }
+    }
+    for (const p of players) track('defendTheHill', defendBest[p.id] || 0, p.id);
+  }
+
+  return { recVals, recHolders };
+}
+
+function computeBadges(player, playerGames, allPlayers, allGames) {
   const earned = new Set();
   const played = player.wins + player.losses;
 
@@ -128,78 +302,29 @@ function computeBadges(player, games, db) {
   if (played >= 50)       earned.add('games_50');
   if (played >= 100)      earned.add('games_100');
 
-  // Beat the top rated player — did this player ever beat whoever was rated
-  // highest at the time of that game (winnerRatingBefore comparison)?
-  games.forEach(g => {
+  // Beat the top-rated player
+  playerGames.forEach(g => {
     if (g.winnerId !== player.id) return;
-    // The loser's rating before the game
     const loserBefore = g.loserRatingBefore;
-    // Was the loser top-rated? Check if any other player had a higher rating
-    // at that moment — approximate by checking if loserBefore was the highest
-    // among all players' ratings before this game. We use the stored
-    // winnerRatingBefore too.
-    const allBefore = db.games
+    const allBefore = allGames
       .filter(og => og.playedAt < g.playedAt)
       .reduce((acc, og) => {
         acc[og.winnerId] = og.winnerRatingAfter;
         acc[og.loserId]  = og.loserRatingAfter;
         return acc;
       }, {});
-    // Fill in starting ratings for anyone not yet seen
-    db.players.forEach(p => { if (!(p.id in allBefore)) allBefore[p.id] = 1000; });
+    allPlayers.forEach(p => { if (!(p.id in allBefore)) allBefore[p.id] = 1000; });
     const maxRating = Math.max(...Object.values(allBefore));
     if (loserBefore >= maxRating) earned.add('beat_top');
   });
 
-  // Records — compute all five and check if player holds any / all
-  // Use sets so ties are handled correctly:
-  //   achieve_record → player appears in at least one record's holder set
-  //   all_records    → player is the SOLE holder (set size 1) of every record
-  const recVals   = { longestWinStreak: 0, mostGamesPlayed: 0, mostGamesWon: 0, highestEloRating: 0, longestActiveWinStreak: 0 };
-  const recHolders = {
-    longestWinStreak:       new Set(),
-    mostGamesPlayed:        new Set(),
-    mostGamesWon:           new Set(),
-    highestEloRating:       new Set(),
-    longestActiveWinStreak: new Set()
-  };
-
-  function trackRecord(key, value, pid) {
-    if (value > recVals[key])       { recVals[key] = value; recHolders[key] = new Set([pid]); }
-    else if (value === recVals[key] && value > 0) { recHolders[key].add(pid); }
-  }
-
-  for (const p of db.players) {
-    const pg = db.games.filter(g => g.winnerId === p.id || g.loserId === p.id);
-    const pp = p.wins + p.losses;
-    trackRecord('mostGamesPlayed', pp, p.id);
-    trackRecord('mostGamesWon', p.wins, p.id);
-
-    let high = 1000;
-    pg.forEach(g => {
-      const r = g.winnerId === p.id ? g.winnerRatingAfter : g.loserRatingAfter;
-      if (r > high) high = r;
-    });
-    trackRecord('highestEloRating', high, p.id);
-
-    let cw = 0, cl = 0, bw = 0, bl = 0;
-    pg.forEach(g => {
-      if (g.winnerId === p.id) { cw++; cl = 0; if (cw > bw) bw = cw; }
-      else                     { cl++; cw = 0; if (cl > bl) bl = cl; }
-    });
-    trackRecord('longestWinStreak', bw, p.id);
-
-    const lastGame = pg[pg.length - 1];
-    const activeStreak = (lastGame && lastGame.winnerId === p.id) ? cw : 0;
-    trackRecord('longestActiveWinStreak', activeStreak, p.id);
-  }
-
+  const { recHolders } = computeRecordMaps(allPlayers, allGames);
   const holdsAny = Object.values(recHolders).some(s => s.has(player.id));
   const holdsAll = Object.values(recHolders).every(s => s.size === 1 && s.has(player.id));
   if (holdsAny) earned.add('achieve_record');
   if (holdsAll) earned.add('all_records');
 
-  if (computeKingOfTheHill(db) === player.id) earned.add('king_of_the_hill');
+  if (computeKingOfTheHill(allGames) === player.id) earned.add('king_of_the_hill');
 
   return BADGE_DEFS.map(b => ({ ...b, earned: earned.has(b.id) }));
 }
@@ -209,102 +334,122 @@ function computeBadges(player, games, db) {
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── League management ─────────────────────────────────────────────────────────
+// ── League routes ─────────────────────────────────────────────────────────────
 
-// GET /api/leagues — list all leagues
-app.get('/api/leagues', (req, res) => {
+app.get('/api/leagues', (_req, res) => {
   res.json(getLeagues());
 });
 
-// POST /api/leagues — create a new league { name }
 app.post('/api/leagues', (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
   const slug = name.trim().toLowerCase().replace(/\s+/g, '_');
   if (!validLeague(slug)) return res.status(400).json({ error: 'Invalid league name' });
-  if (fs.existsSync(dbPath(slug))) return res.status(400).json({ error: 'League already exists' });
-  getDb(slug); // creates the file
+  if (leagueExists(slug)) return res.status(400).json({ error: 'League already exists' });
+  ensureLeagueDir(slug);
   res.status(201).json({ league: slug });
 });
 
-// ── Helper — resolve & validate ?league= param ────────────────────────────────
+// ── Helper: resolve & validate ?league= param ─────────────────────────────────
 
 function resolveLeague(req, res) {
   const league = (req.query.league || 'pool').toLowerCase();
-  if (!validLeague(league)) { res.status(400).json({ error: 'Invalid league' }); return null; }
-  if (!fs.existsSync(dbPath(league))) { res.status(404).json({ error: 'League not found' }); return null; }
+  if (!validLeague(league))  { res.status(400).json({ error: 'Invalid league' });    return null; }
+  if (!leagueExists(league)) { res.status(404).json({ error: 'League not found' }); return null; }
   return league;
 }
 
-// ── Routes ────────────────────────────────────────────────────────────────────
+// ── Admin: manual snapshot ────────────────────────────────────────────────────
 
-// GET /api/players?league=pool
+app.post('/api/admin/snapshot', (req, res) => {
+  const league = resolveLeague(req, res); if (!league) return;
+  const { players } = getCache(league);
+  writeSnapshot(league, players);
+  res.json({ ok: true, snapshotAt: new Date().toISOString(), players: players.length });
+});
+
+// ── Players ───────────────────────────────────────────────────────────────────
+
 app.get('/api/players', (req, res) => {
   const league = resolveLeague(req, res); if (!league) return;
-  const db = getDb(league);
-  const sorted = [...db.players].sort((a, b) => b.rating - a.rating);
-  const kingId = computeKingOfTheHill(db);
+  const { players, games } = getCache(league);
+  const sorted = [...players].sort((a, b) => b.rating - a.rating);
+  const kingId = computeKingOfTheHill(games);
 
-  const players = sorted.map(p => {
-    const games = db.games
+  const result = sorted.map(p => {
+    const form = games
       .filter(g => g.winnerId === p.id || g.loserId === p.id)
       .slice(-5)
       .map(g => g.winnerId === p.id ? 'W' : 'L');
-    return { ...p, form: games };
+    return { ...p, form };
   });
 
-  res.json({ players, kingId });
+  res.json({ players: result, kingId });
 });
 
-// POST /api/players?league=pool
 app.post('/api/players', (req, res) => {
   const league = resolveLeague(req, res); if (!league) return;
-  const db = getDb(league);
   const { name } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
-  const duplicate = db.players.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
+
+  const { players } = getCache(league);
+  const duplicate = players.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
   if (duplicate) return res.status(400).json({ error: 'Player already exists' });
 
-  const player = { id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name: name.trim(), rating: 1000, wins: 0, losses: 0 };
-  db.players.push(player);
-  saveDb(league, db);
+  const player = {
+    id:           `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name:         name.trim(),
+    registeredAt: new Date().toISOString(),
+    rating:       1000,
+    wins:         0,
+    losses:       0,
+  };
+
+  // Append only the immutable identity fields to the log
+  appendJsonl(playersPath(league), { id: player.id, name: player.name, registeredAt: player.registeredAt });
+
+  // Update cache in-place
+  players.push(player);
+
   res.status(201).json(player);
 });
 
-// GET /api/players/:id/profile?league=pool
+// ── Player profile ────────────────────────────────────────────────────────────
+
 app.get('/api/players/:id/profile', (req, res) => {
   const league = resolveLeague(req, res); if (!league) return;
-  const db = getDb(league);
-  const player = db.players.find(p => p.id === req.params.id);
+  const { players, games } = getCache(league);
+
+  const player = players.find(p => p.id === req.params.id);
   if (!player) return res.status(404).json({ error: 'Player not found' });
 
-  const games = db.games.filter(g => g.winnerId === player.id || g.loserId === player.id);
-  const sorted = [...db.players].sort((a, b) => b.rating - a.rating);
-  const position = sorted.findIndex(p => p.id === player.id) + 1;
+  const playerGames = games.filter(g => g.winnerId === player.id || g.loserId === player.id);
+  const sorted      = [...players].sort((a, b) => b.rating - a.rating);
+  const position    = sorted.findIndex(p => p.id === player.id) + 1;
 
-  const allResults = [...games].reverse().map(g => ({
-    result: g.winnerId === player.id ? 'W' : 'L',
-    opponent: g.winnerId === player.id
-      ? (db.players.find(p => p.id === g.loserId)  || { name: 'Unknown' }).name
-      : (db.players.find(p => p.id === g.winnerId) || { name: 'Unknown' }).name,
+  const allResults = [...playerGames].reverse().map(g => ({
+    result:       g.winnerId === player.id ? 'W' : 'L',
+    opponent:     g.winnerId === player.id
+      ? (players.find(p => p.id === g.loserId)  || { name: 'Unknown' }).name
+      : (players.find(p => p.id === g.winnerId) || { name: 'Unknown' }).name,
     ratingChange: g.winnerId === player.id ? +g.ratingChange : -g.ratingChange,
-    playedAt: g.playedAt
+    playedAt:     g.playedAt,
   }));
 
   let longestWin = 0, longestLoss = 0, curWin = 0, curLoss = 0;
   let currentStreak = { type: null, count: 0 };
-  games.forEach(g => {
+  playerGames.forEach(g => {
     const won = g.winnerId === player.id;
-    if (won) { curWin++; curLoss = 0; if (curWin > longestWin) longestWin = curWin; }
+    if (won) { curWin++; curLoss = 0; if (curWin  > longestWin)  longestWin  = curWin; }
     else     { curLoss++; curWin = 0; if (curLoss > longestLoss) longestLoss = curLoss; }
   });
-  if (games.length) {
-    const lastWon = games[games.length - 1].winnerId === player.id;
+  if (playerGames.length) {
+    const lastWon = playerGames[playerGames.length - 1].winnerId === player.id;
     currentStreak = lastWon ? { type: 'W', count: curWin } : { type: 'L', count: curLoss };
   }
 
   let high = player.rating, low = player.rating;
-  games.forEach(g => {
+  playerGames.forEach(g => {
     const r = g.winnerId === player.id ? g.winnerRatingAfter : g.loserRatingAfter;
     if (r > high) high = r;
     if (r < low)  low  = r;
@@ -313,27 +458,29 @@ app.get('/api/players/:id/profile', (req, res) => {
   if (1000 < low)  low  = 1000;
 
   const eloHistory = [{ rating: 1000, playedAt: null, label: 'Start' }];
-  games.forEach(g => {
+  playerGames.forEach(g => {
     const won = g.winnerId === player.id;
     eloHistory.push({ rating: won ? g.winnerRatingAfter : g.loserRatingAfter, playedAt: g.playedAt });
   });
 
   const total = player.wins + player.losses;
+
   res.json({
     id: player.id, name: player.name, rating: player.rating,
-    position, totalPlayers: db.players.length,
+    position, totalPlayers: players.length,
     wins: player.wins, losses: player.losses, played: total,
     winPct: total ? Math.round((player.wins / total) * 100) : 0,
     results: allResults, longestWinStreak: longestWin, longestLossStreak: longestLoss,
     currentStreak, highestRating: high, lowestRating: low, eloHistory,
-    badges: computeBadges(player, games, db)
+    badges: computeBadges(player, playerGames, players, games),
   });
 });
 
-// GET /api/records?league=pool
+// ── Records ───────────────────────────────────────────────────────────────────
+
 app.get('/api/records', (req, res) => {
   const league = resolveLeague(req, res); if (!league) return;
-  const db = getDb(league);
+  const { players, games } = getCache(league);
 
   const records = {
     longestWinStreak:       { value: 0, holders: [] },
@@ -341,7 +488,8 @@ app.get('/api/records', (req, res) => {
     mostGamesPlayed:        { value: 0, holders: [] },
     mostGamesWon:           { value: 0, holders: [] },
     highestEloRating:       { value: 0, holders: [] },
-    biggestUpset:           { ratingDiff: 0, winnerId: null, winnerName: null, loserId: null, loserName: null }
+    defendTheHill:          { value: 0, holders: [] },
+    biggestUpset: { ratingDiff: 0, winnerId: null, winnerName: null, loserId: null, loserName: null },
   };
 
   function addHolder(record, value, player) {
@@ -353,45 +501,67 @@ app.get('/api/records', (req, res) => {
     }
   }
 
-  for (const player of db.players) {
-    const games = db.games.filter(g => g.winnerId === player.id || g.loserId === player.id);
+  for (const player of players) {
+    const pg     = games.filter(g => g.winnerId === player.id || g.loserId === player.id);
     const played = player.wins + player.losses;
 
-    addHolder(records.mostGamesPlayed, played, player);
-    addHolder(records.mostGamesWon, player.wins, player);
+    addHolder(records.mostGamesPlayed, played,       player);
+    addHolder(records.mostGamesWon,    player.wins,  player);
 
     let high = 1000;
-    games.forEach(g => {
+    pg.forEach(g => {
       const r = g.winnerId === player.id ? g.winnerRatingAfter : g.loserRatingAfter;
       if (r > high) high = r;
     });
     addHolder(records.highestEloRating, high, player);
 
-    let curWin = 0, bestWin = 0;
-    games.forEach(g => {
-      if (g.winnerId === player.id) { curWin++; if (curWin > bestWin) bestWin = curWin; }
-      else                          { curWin = 0; }
+    let cw = 0, bw = 0;
+    pg.forEach(g => {
+      if (g.winnerId === player.id) { cw++; if (cw > bw) bw = cw; }
+      else                          { cw = 0; }
     });
-    addHolder(records.longestWinStreak, bestWin, player);
+    addHolder(records.longestWinStreak, bw, player);
 
-    // Active win streak — only if the player's most recent game was a win
-    const lastGame = games[games.length - 1];
-    const activeStreak = (lastGame && lastGame.winnerId === player.id) ? curWin : 0;
+    const lastGame     = pg[pg.length - 1];
+    const activeStreak = (lastGame && lastGame.winnerId === player.id) ? cw : 0;
     addHolder(records.longestActiveWinStreak, activeStreak, player);
   }
 
-  // Biggest upset — the game with the largest rating deficit overcome by the winner
-  for (const g of db.games) {
+  // Defend the Hill
+  {
+    const sorted = [...games].sort((a, b) => a.playedAt.localeCompare(b.playedAt));
+    const defendBest = {};
+    if (sorted.length) {
+      let kingId = sorted[0].winnerId;
+      let curDefend = 1;
+      defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
+      for (let i = 1; i < sorted.length; i++) {
+        const g = sorted[i];
+        if (g.winnerId === kingId) {
+          curDefend++;
+          defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
+        } else {
+          kingId    = g.winnerId;
+          curDefend = 1;
+          defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
+        }
+      }
+    }
+    for (const player of players) addHolder(records.defendTheHill, defendBest[player.id] || 0, player);
+  }
+
+  // Biggest upset
+  for (const g of games) {
     const diff = g.loserRatingBefore - g.winnerRatingBefore;
     if (diff > records.biggestUpset.ratingDiff) {
-      const winner = db.players.find(p => p.id === g.winnerId);
-      const loser  = db.players.find(p => p.id === g.loserId);
+      const winner = players.find(p => p.id === g.winnerId);
+      const loser  = players.find(p => p.id === g.loserId);
       records.biggestUpset = {
         ratingDiff: diff,
         winnerId:   g.winnerId,
         winnerName: winner ? winner.name : 'Unknown',
         loserId:    g.loserId,
-        loserName:  loser  ? loser.name  : 'Unknown'
+        loserName:  loser  ? loser.name  : 'Unknown',
       };
     }
   }
@@ -399,51 +569,58 @@ app.get('/api/records', (req, res) => {
   res.json(records);
 });
 
-// GET /api/games?league=pool
+// ── Games ─────────────────────────────────────────────────────────────────────
+
 app.get('/api/games', (req, res) => {
   const league = resolveLeague(req, res); if (!league) return;
-  const db = getDb(league);
-  const enriched = [...db.games].reverse().map(g => {
-    const winner = db.players.find(p => p.id === g.winnerId);
-    const loser  = db.players.find(p => p.id === g.loserId);
+  const { players, games } = getCache(league);
+  const enriched = [...games].reverse().map(g => {
+    const winner = players.find(p => p.id === g.winnerId);
+    const loser  = players.find(p => p.id === g.loserId);
     return { ...g, winnerName: winner ? winner.name : 'Unknown', loserName: loser ? loser.name : 'Unknown' };
   });
   res.json(enriched);
 });
 
-// POST /api/games?league=pool
 app.post('/api/games', (req, res) => {
   const league = resolveLeague(req, res); if (!league) return;
-  const db = getDb(league);
   const { winnerId, loserId } = req.body;
-  if (!winnerId || !loserId) return res.status(400).json({ error: 'winnerId and loserId required' });
-  if (winnerId === loserId)  return res.status(400).json({ error: 'Winner and loser must be different players' });
+  if (!winnerId || !loserId)  return res.status(400).json({ error: 'winnerId and loserId required' });
+  if (winnerId === loserId)   return res.status(400).json({ error: 'Winner and loser must be different players' });
 
-  const winner = db.players.find(p => p.id === winnerId);
-  const loser  = db.players.find(p => p.id === loserId);
+  const { players, games } = getCache(league);
+
+  const winner = players.find(p => p.id === winnerId);
+  const loser  = players.find(p => p.id === loserId);
   if (!winner) return res.status(404).json({ error: 'Winner not found' });
   if (!loser)  return res.status(404).json({ error: 'Loser not found' });
 
   const { newWinnerRating, newLoserRating, change } = calcElo(winner.rating, loser.rating);
+
   const game = {
-    id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    winnerId: winner.id, loserId: loser.id,
-    winnerRatingBefore: winner.rating, loserRatingBefore: loser.rating,
-    winnerRatingAfter: newWinnerRating, loserRatingAfter: newLoserRating,
-    ratingChange: change, playedAt: new Date().toISOString()
+    id:                 `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    winnerId:           winner.id,
+    loserId:            loser.id,
+    winnerRatingBefore: winner.rating,
+    loserRatingBefore:  loser.rating,
+    winnerRatingAfter:  newWinnerRating,
+    loserRatingAfter:   newLoserRating,
+    ratingChange:       change,
+    playedAt:           new Date().toISOString(),
   };
 
-  winner.rating = newWinnerRating; winner.wins   += 1;
-  loser.rating  = newLoserRating;  loser.losses  += 1;
-  db.games.push(game);
-  saveDb(league, db);
+  // Append to log (single atomic write)
+  appendJsonl(gamesPath(league), game);
+
+  // Update cache in-place — no re-replay needed
+  winner.rating = newWinnerRating; winner.wins++;
+  loser.rating  = newLoserRating;  loser.losses++;
+  games.push(game);
 
   res.status(201).json({ ...game, winnerName: winner.name, loserName: loser.name });
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-
-const os = require('os');
 
 function getLocalIP() {
   const nets = os.networkInterfaces();
@@ -460,3 +637,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  Network: http://${ip}:${PORT}`);
 });
 
+module.exports = app; // for testing

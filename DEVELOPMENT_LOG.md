@@ -236,13 +236,61 @@ The `README.md` was updated multiple times throughout development to reflect:
 
 ---
 
+### 17. Append-Only Storage with In-Memory Cache and Snapshots
+
+#### Motivation
+The original design used a single `data/<league>.json` file that was read and completely rewritten on every change. This created a read-modify-write race condition — if two requests arrived simultaneously, one write could silently overwrite the other.
+
+#### Design discussions
+Three questions were explored before implementation:
+1. **Format** — CSV vs JSONL. JSONL chosen because it maps directly to existing JS objects with near-zero migration cost and handles special characters in names without quoting rules.
+2. **Snapshots** — to bound cold-start replay time, monthly snapshots are written so restarts only replay the last 30 days of games.
+3. **Multi-league caching** — to avoid replaying a league's log on every UI switch, each league is cached in memory after the first load and updated in-place on writes.
+
+#### New disk layout
+```
+data/<league>/
+  players.jsonl      ← one player registration per line (id, name, registeredAt)
+  games.jsonl        ← one game result per line (all rating fields preserved)
+  snapshots/
+    <ISO-date>.json  ← { snapshotAt, players: [{id, name, registeredAt, rating, wins, losses}] }
+```
+
+#### Key implementation decisions
+
+| Concern | Decision |
+|---------|----------|
+| Player writes | `appendFileSync` of a single JSONL line — atomic at OS level |
+| Game writes | Same — append one line |
+| Ratings stored? | **No** — always derived by replaying the game log |
+| Cold start | Load latest snapshot → filter games after snapshot timestamp → replay only those |
+| Auto-snapshot | Triggered on cold load if latest snapshot is ≥ 30 days old |
+| Manual snapshot | `POST /api/admin/snapshot?league=<league>` |
+| Per-league cache | `Map<slug, { players, games }>` — lazy-loaded, updated in-place on writes |
+| League switching | Zero replays — second visit to a cached league served entirely from memory |
+| Deleting a game | Not yet implemented; tombstone pattern noted as the correct approach if needed |
+
+#### Test changes
+- All ELO, badge, King of the Hill, and records logic — **unchanged**
+- All API routes — **unchanged** (same URLs and response shapes)
+- All frontend code — **unchanged**
+- `saveDb()` and `getDb()` replaced by `appendJsonl()`, `readJsonl()`, `coldLoad()`, and `getCache()`
+- `replayGames()` added — rebuilds `rating`, `wins`, `losses` from a base player list and a list of games
+
+#### Test changes
+- `playwright.config.js` — test server command now cleans the test data directory before each run (`rm -rf /tmp/...`) to prevent stale league directories from previous runs causing 400 errors
+- `tests/helpers.js` — `createTestLeague` now generates shorter names (`tl_<8-digit-ts>_<4-char-rand><suffix>`) guaranteed to stay under the 40-character `validLeague` limit
+- `tests/records.spec.js` — card count updated from 6 to 7 (6 Grand Slam + 1 Biggest Upset)
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
 | Backend | Node.js + Express |
 | Frontend | Vanilla HTML, CSS, JavaScript |
-| Data storage | JSON files (one per league, in `data/`) |
+| Data storage | Append-only JSONL files (one directory per league), monthly snapshots, in-memory cache |
 | Charts | Chart.js (ELO history chart on profile page) |
 | Testing | Playwright (API + UI, 120 tests) |
 | Version control | Git + GitHub |
@@ -259,11 +307,16 @@ pool_league/
 ├── README.md
 ├── DEVELOPMENT_LOG.md     # This file
 ├── data/
-│   ├── pool.json          # Pool league data
-│   ├── chess.json         # Chess league data
-│   ├── darts.json         # Darts league data
-│   ├── backgammon.json    # Backgammon league data
-│   └── doh.json           # Example/test league
+│   ├── pool/
+│   │   ├── players.jsonl  # Pool player registrations (append-only)
+│   │   ├── games.jsonl    # Pool game results (append-only)
+│   │   └── snapshots/     # Monthly derived-state snapshots
+│   ├── chess/
+│   │   ├── players.jsonl
+│   │   └── games.jsonl
+│   └── backgammon/
+│       ├── players.jsonl
+│       └── games.jsonl
 ├── tests/
 │   ├── helpers.js         # Shared test utilities
 │   ├── api.spec.js        # API tests
@@ -301,4 +354,5 @@ All routes accept a `?league=` query parameter (defaults to `pool`).
 | `GET` | `/api/games?league=pool` | Get all games (most recent first) |
 | `POST` | `/api/games?league=pool` | Record a game result `{ winnerId, loserId }` |
 | `GET` | `/api/records?league=pool` | Get all-time records |
+| `POST` | `/api/admin/snapshot?league=pool` | Force a snapshot of derived state |
 

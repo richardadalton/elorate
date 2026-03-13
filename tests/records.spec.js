@@ -38,9 +38,9 @@ test.describe('Records Page — Layout', () => {
     await expect(backLink).toHaveAttribute('href', /\//);
   });
 
-  test('shows six record cards', async ({ page }) => {
+  test('shows seven record cards', async ({ page }) => {
     await gotoRecords(page);
-    await expect(page.locator('.record-card')).toHaveCount(6);
+    await expect(page.locator('.record-card')).toHaveCount(7);
   });
 });
 
