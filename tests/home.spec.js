@@ -75,6 +75,24 @@ test.describe('Home Page — League Table', () => {
     // Bob's last result was a loss — he should have a .form-l square
     await expect(page.locator('.form-l').first()).toBeVisible();
   });
+
+  test('streak column header is shown', async ({ page }) => {
+    await expect(page.locator('thead th.streak-head')).toContainText('Streak');
+  });
+
+  test('streak pill is shown for players who have played', async ({ page }) => {
+    await expect(page.locator('.streak-pill').first()).toBeVisible();
+  });
+
+  test('winner has a green W streak pill', async ({ page }) => {
+    // Alice won the last game — she should have a W streak pill
+    await expect(page.locator('.streak-w').first()).toBeVisible();
+  });
+
+  test('loser has a red L streak pill', async ({ page }) => {
+    // Bob lost the last game — he should have an L streak pill
+    await expect(page.locator('.streak-l').first()).toBeVisible();
+  });
 });
 
 test.describe('Home Page — Add Player', () => {
@@ -186,10 +204,11 @@ test.describe('Home Page — Game History', () => {
     league = await createTestLeague(request, '_history');
     alice  = await addPlayer(request, league, 'Alice');
     bob    = await addPlayer(request, league, 'Bob');
-    await recordGame(request, league, alice.id, bob.id);
   });
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ request, page }) => {
+    // Record a fresh game so there is always at least one .game-item visible
+    await recordGame(request, league, alice.id, bob.id);
     await page.goto(`${BASE}/`);
     await page.evaluate(l => localStorage.setItem('currentLeague', l), league);
     await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
@@ -197,7 +216,8 @@ test.describe('Home Page — Game History', () => {
   });
 
   test('game history shows at least one result', async ({ page }) => {
-    await expect(page.locator('.game-item')).toHaveCount(1);
+    const count = await page.locator('.game-item').count();
+    expect(count).toBeGreaterThanOrEqual(1);
   });
 
   test('game history entry shows winner and loser names', async ({ page }) => {

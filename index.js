@@ -392,11 +392,24 @@ app.get('/api/players', (req, res) => {
   const kingId = computeKingOfTheHill(games);
 
   const result = sorted.map(p => {
-    const form = games
-      .filter(g => g.winnerId === p.id || g.loserId === p.id)
+    const playerGames = games.filter(g => g.winnerId === p.id || g.loserId === p.id);
+
+    const form = playerGames
       .slice(-5)
       .map(g => g.winnerId === p.id ? 'W' : 'L');
-    return { ...p, form };
+
+    let curW = 0, curL = 0;
+    playerGames.forEach(g => {
+      if (g.winnerId === p.id) { curW++; curL = 0; }
+      else                     { curL++; curW = 0; }
+    });
+    const currentStreak = playerGames.length === 0
+      ? { type: null, count: 0 }
+      : playerGames[playerGames.length - 1].winnerId === p.id
+        ? { type: 'W', count: curW }
+        : { type: 'L', count: curL };
+
+    return { ...p, form, currentStreak };
   });
 
   res.json({ players: result, kingId });

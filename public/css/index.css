@@ -194,6 +194,38 @@ tbody td.num { text-align: right; }
 
 .win-pct { color: var(--muted); font-size: 0.85rem; }
 
+/* ── Current streak column ── */
+.streak-head {
+  text-align: center;
+  white-space: nowrap;
+}
+.streak-cell {
+  text-align: center;
+  white-space: nowrap;
+}
+.streak-pill {
+  display: inline-block;
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.streak-w {
+  background: rgba(74,222,128,0.15);
+  color: var(--green);
+  border: 1px solid rgba(74,222,128,0.3);
+}
+.streak-l {
+  background: rgba(248,113,113,0.15);
+  color: var(--red);
+  border: 1px solid rgba(248,113,113,0.3);
+}
+.streak-none {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 /* ── League table avatars ── */
 .avatar-head { width: 36px; padding: 0; }
 .avatar-cell { width: 36px; padding: 6px 4px; }

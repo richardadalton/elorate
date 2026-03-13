@@ -401,7 +401,7 @@ npm install multer sharp
 | Data storage | Append-only JSONL files (one directory per league), monthly snapshots, in-memory cache |
 | Avatar storage | JPEG files in `data/<league>/avatars/`, SVG initials fallback generated server-side |
 | Charts | Chart.js (ELO history chart on profile page) |
-| Testing | Playwright (API + UI, 136 tests) |
+| Testing | Playwright (API + UI, 143 tests, retries: 1) |
 | Version control | Git + GitHub |
 
 ---

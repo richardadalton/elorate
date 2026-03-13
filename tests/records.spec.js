@@ -19,10 +19,24 @@ test.beforeAll(async ({ request }) => {
 });
 
 async function gotoRecords(page) {
+  if (!league) throw new Error('league not set — beforeAll may not have completed');
   await page.goto(`${BASE}/`);
   await page.evaluate(l => localStorage.setItem('currentLeague', l), league);
   await page.goto(`${BASE}/records.html`);
-  await page.waitForSelector('.records-grid', { timeout: 10_000 });
+  // Wait for .record-card elements to appear, then wait until at least one shows a real value
+  await page.waitForSelector('.record-card', { timeout: 15_000 });
+  // The records page renders "—" / "No games yet" initially then replaces with real data.
+  // Poll until the Longest Winning Streak card shows a number (Alice wins 3 in beforeAll).
+  await page.waitForFunction(
+    () => {
+      const card = Array.from(document.querySelectorAll('.record-card'))
+        .find(c => c.textContent.includes('Longest Winning Streak'));
+      if (!card) return false;
+      const val = card.querySelector('.record-value');
+      return val && val.textContent.trim() !== '—';
+    },
+    { timeout: 15_000 }
+  );
 }
 
 test.describe('Records Page — Layout', () => {

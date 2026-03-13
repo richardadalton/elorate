@@ -138,12 +138,12 @@ npm run test:ui
 npm run test:report
 ```
 
-### What's covered (136 tests)
+### What's covered (143 tests)
 
 | Suite | Tests | Covers |
 |-------|-------|--------|
-| `api.spec.js` | 66 | Leagues, Players, Games, Delete Game, Profile, Records, ELO maths, King of the Hill, Badges, Form guide, Biggest Upset, Active Streak, Avatars |
-| `home.spec.js` | 30 | League table (incl. avatar column), Form guide, Add player, Record game, Game history, Delete game UI, League switcher |
+| `api.spec.js` | 69 | Leagues, Players (incl. currentStreak), Games, Delete Game, Profile, Records, ELO maths, King of the Hill, Badges, Form guide, Biggest Upset, Active Streak, Avatars |
+| `home.spec.js` | 34 | League table (incl. avatar column, streak column), Form guide, Add player, Record game, Game history, Delete game UI, League switcher |
 | `player.spec.js` | 20 | Hero section (incl. avatar), Stats grid, Badges, Streaks, Results history, ELO chart, 404 |
 | `records.spec.js` | 20 | Layout, All 7 record cards, Holder links, Biggest Upset, Active Streak, Empty state |
 

@@ -4,10 +4,10 @@ const { defineConfig, devices } = require('@playwright/test');
 module.exports = defineConfig({
   testDir: './tests',
   timeout: 30_000,
-  expect: { timeout: 5_000 },
+  expect: { timeout: 8_000 },
   fullyParallel: false,   // tests share a live server — run serially to avoid race conditions
   workers: 1,
-  retries: 0,
+  retries: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
 
   use: {

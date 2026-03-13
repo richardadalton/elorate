@@ -153,6 +153,33 @@ test.describe('Players API', () => {
     expect(bob.form[bob.form.length - 1]).toBe('L');
   });
 
+  test('GET /api/players includes currentStreak for each player', async ({ request }) => {
+    const { players } = await (await request.get(`${BASE}/api/players?league=${league}`)).json();
+    for (const p of players) {
+      expect(p).toHaveProperty('currentStreak');
+      expect(p.currentStreak).toHaveProperty('type');
+      expect(p.currentStreak).toHaveProperty('count');
+    }
+  });
+
+  test('currentStreak reflects last result (W for winner, L for loser)', async ({ request }) => {
+    const { players } = await (await request.get(`${BASE}/api/players?league=${league}`)).json();
+    const alice = players.find(p => p.name === 'Alice');
+    const bob   = players.find(p => p.name === 'Bob');
+    expect(alice.currentStreak.type).toBe('W');
+    expect(alice.currentStreak.count).toBeGreaterThanOrEqual(1);
+    expect(bob.currentStreak.type).toBe('L');
+    expect(bob.currentStreak.count).toBeGreaterThanOrEqual(1);
+  });
+
+  test('currentStreak type is null for player with no games', async ({ request }) => {
+    const noGameLeague = await createTestLeague(request, '_nostreak');
+    await addPlayer(request, noGameLeague, 'Alice');
+    const { players } = await (await request.get(`${BASE}/api/players?league=${noGameLeague}`)).json();
+    expect(players[0].currentStreak.type).toBeNull();
+    expect(players[0].currentStreak.count).toBe(0);
+  });
+
   test('GET /api/players returns 404 for unknown league', async ({ request }) => {
     const res = await request.get(`${BASE}/api/players?league=doesnotexist_xyz`);
     expect(res.status()).toBe(404);
