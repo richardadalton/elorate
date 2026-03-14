@@ -85,10 +85,12 @@ header h1 {
   background-clip: text;
 }
 
-header p {
+.tagline {
   color: var(--muted);
-  margin-top: 4px;
-  font-size: 0.9rem;
+  margin-top: 2px;
+  font-size: 0.85rem;
+  letter-spacing: 0.03em;
+  text-align: left;
 }
 
 nav {
