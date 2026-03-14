@@ -3,7 +3,7 @@
  */
 
 const { test, expect } = require('@playwright/test');
-const { BASE, createTestLeague, addPlayer, recordGame } = require('./helpers');
+const { BASE, createTestLeague, addPlayer, recordGame, registerAndLogin } = require('./helpers');
 
 let league, alice, bob;
 
@@ -233,6 +233,58 @@ test.describe('Player Profile — Rival & Nemesis', () => {
     const nemesisLink = page.locator('.nemesis-card .h2h-name');
     const href = await nemesisLink.getAttribute('href');
     expect(href).toMatch(/player\.html\?id=/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Claim player — "This is me" button
+// ─────────────────────────────────────────────────────────────────────────────
+
+test.describe('Player Profile — Claim Player', () => {
+  let claimLeague, guestPlayer;
+
+  test.beforeAll(async ({ request }) => {
+    claimLeague = await createTestLeague(request, '_claim_ui');
+    guestPlayer = await addPlayer(request, claimLeague, 'GuestClaim');
+  });
+
+  test('"This is me" button is visible for logged-in user viewing unclaimed player', async ({ request, page }) => {
+    const creds = await registerAndLogin(request, '_claim_ui_view');
+    await page.request.post(`${BASE}/api/auth/login`, {
+      data: { email: creds.email, password: creds.password },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await page.goto(`${BASE}/player.html?id=${guestPlayer.id}&league=${claimLeague}`, {
+      waitUntil: 'networkidle', timeout: 30_000,
+    });
+    await expect(page.locator('.btn-claim')).toBeVisible();
+    await expect(page.locator('.btn-claim')).toContainText('This is me');
+  });
+
+  test('"This is me" button is not visible when not logged in', async ({ page }) => {
+    await page.goto(`${BASE}/player.html?id=${guestPlayer.id}&league=${claimLeague}`, {
+      waitUntil: 'networkidle', timeout: 30_000,
+    });
+    await expect(page.locator('.btn-claim')).toHaveCount(0);
+  });
+
+  test('clicking "This is me" claims the player and removes the button', async ({ request, page }) => {
+    const creds = await registerAndLogin(request, '_claim_ui_click');
+    const claimLeague2 = await createTestLeague(request, '_claim_ui_click');
+    const guestP2 = await addPlayer(request, claimLeague2, 'ClaimClick');
+
+    await page.request.post(`${BASE}/api/auth/login`, {
+      data: { email: creds.email, password: creds.password },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await page.goto(`${BASE}/player.html?id=${guestP2.id}&league=${claimLeague2}`, {
+      waitUntil: 'networkidle', timeout: 30_000,
+    });
+
+    await page.locator('.btn-claim').click();
+    // Page reloads — wait for hero to appear and button to be gone
+    await page.waitForSelector('.hero', { timeout: 20_000 });
+    await expect(page.locator('.btn-claim')).toHaveCount(0);
   });
 });
 

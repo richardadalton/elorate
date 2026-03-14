@@ -84,6 +84,20 @@ function avatarPath(league, playerId) {
   return path.join(avatarsDir(league), `${playerId}.jpg`);
 }
 
+// Global user avatars — stored at data/avatars/<userId>.jpg (not per-league)
+function userAvatarsDir() {
+  return path.join(DATA_DIR, 'avatars');
+}
+function userAvatarPath(userId) {
+  return path.join(userAvatarsDir(), `${userId}.jpg`);
+}
+
+/** Return the avatar file path for a player — user-level if linked, else player-level. */
+function resolveAvatarPath(player, league) {
+  if (player && player.userId) return userAvatarPath(player.userId);
+  return avatarPath(league, player ? player.id : '');
+}
+
 /** Look up a player's name by id, falling back to 'Unknown'. */
 function playerName(players, id) {
   return (players.find(p => p.id === id) || { name: 'Unknown' }).name;
@@ -950,12 +964,17 @@ const upload = multer({
   }
 });
 
-// GET /api/players/:id/avatar?league=pool — serve avatar or redirect to initials fallback
+// GET /api/players/:id/avatar?league=pool — serve avatar or SVG initials fallback
 app.get('/api/players/:id/avatar', (req, res) => {
   const league = resolveLeague(req, res);
   if (!league) return;
   const { id } = req.params;
-  const file = avatarPath(league, id);
+
+  const { players } = getCache(league);
+  const player = players.find(p => p.id === id);
+
+  // Prefer user-level avatar, fall back to legacy per-player avatar
+  const file = player ? resolveAvatarPath(player, league) : avatarPath(league, id);
 
   if (fs.existsSync(file)) {
     res.setHeader('Content-Type', 'image/jpeg');
@@ -963,15 +982,14 @@ app.get('/api/players/:id/avatar', (req, res) => {
     return fs.createReadStream(file).pipe(res);
   }
 
-  // No avatar — send a generated SVG with the player's initials
-  const { players } = getCache(league);
-  const player = players.find(p => p.id === id);
-  const initials = player
+  // No avatar — generate SVG initials; use userId for colour so it's consistent across leagues
+  const colourKey = (player && player.userId) ? player.userId : id;
+  const initials  = player
     ? player.name.trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0, 2).join('')
     : '?';
 
   const colours = ['#16a34a','#0d9488','#2563eb','#7c3aed','#c2410c','#b45309'];
-  const colour  = colours[id.charCodeAt(0) % colours.length];
+  const colour  = colours[colourKey.charCodeAt(0) % colours.length];
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
     <circle cx="100" cy="100" r="100" fill="${colour}"/>
@@ -991,17 +1009,20 @@ app.post('/api/players/:id/avatar', upload.single('avatar'), async (req, res) =>
   const { id } = req.params;
 
   const { players } = getCache(league);
-  if (!players.find(p => p.id === id)) return res.status(404).json({ error: 'Player not found' });
+  const player = players.find(p => p.id === id);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   try {
-    const dir = avatarsDir(league);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    // Save to user-level path if the player is linked to a user, else per-player path
+    const savePath = resolveAvatarPath(player, league);
+    const saveDir  = path.dirname(savePath);
+    if (!fs.existsSync(saveDir)) fs.mkdirSync(saveDir, { recursive: true });
 
     await sharp(req.file.buffer)
       .resize(200, 200, { fit: 'cover', position: 'centre' })
       .jpeg({ quality: 85 })
-      .toFile(avatarPath(league, id));
+      .toFile(savePath);
 
     res.json({ avatarUrl: `/api/players/${id}/avatar?league=${league}&v=${Date.now()}` });
   } catch (e) {

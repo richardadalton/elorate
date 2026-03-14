@@ -152,30 +152,36 @@ pool_league/
 ├── package.json
 ├── playwright.config.js   # Playwright test configuration
 ├── data/
+│   ├── users.jsonl        # User accounts (append-only, global)
+│   ├── avatars/           # User avatars (<userId>.jpg, shared across leagues)
 │   ├── pool/
 │   │   ├── players.jsonl  # Pool player registrations (append-only)
 │   │   ├── games.jsonl    # Pool game results (append-only)
-│   │   ├── avatars/       # Player avatar images (<playerId>.jpg)
+│   │   ├── avatars/       # Guest player avatars (<playerId>.jpg)
 │   │   └── snapshots/     # Monthly derived-state snapshots
 │   └── chess/
 │       ├── players.jsonl
 │       └── games.jsonl
 ├── tests/
-│   ├── helpers.js         # Shared test utilities
-│   ├── api.spec.js        # API tests (leagues, players, games, records, badges, KOTH)
+│   ├── helpers.js         # Shared test utilities (incl. registerAndLogin)
+│   ├── api.spec.js        # API tests (leagues, players, games, records, badges, auth, claim)
 │   ├── home.spec.js       # UI tests — home page
-│   ├── player.spec.js     # UI tests — player profile page
+│   ├── player.spec.js     # UI tests — player profile page (incl. claim button)
 │   └── records.spec.js    # UI tests — records page
 └── public/
     ├── index.html         # Main league table & record game page
+    ├── login.html         # Sign-in page
+    ├── register.html      # Registration page
     ├── player.html        # Individual player profile page
     ├── records.html       # All-time records page
     ├── css/
     │   ├── main.css
+    │   ├── auth.css       # Login/register page styles
     │   ├── index.css
     │   ├── player.css
     │   └── records.css
     └── js/
+        ├── auth.js        # Shared auth nav (used by player.html, records.html)
         ├── index.js       # Frontend logic for main page
         ├── player.js      # Frontend logic for player profile
         └── records.js     # Frontend logic for records page
@@ -257,10 +263,13 @@ The league uses the standard **ELO formula** with a K-factor of **32**.
 
 ## Data Storage
 
-Each league uses an **append-only log** stored in its own sub-directory under `data/`:
+Each league uses an **append-only log** stored in its own sub-directory under `data/`. User accounts and user-level avatars are stored globally under `data/`.
 
 ```
 data/
+  users.jsonl          ← one user account per line (append-only)
+  avatars/
+    <userId>.jpg       ← user avatar (shared across all leagues)
   pool/
     players.jsonl      ← one player registration per line (append-only)
     games.jsonl        ← one game result per line (append-only)
@@ -269,13 +278,17 @@ data/
   chess/
     players.jsonl
     games.jsonl
+    avatars/
+      <playerId>.jpg   ← guest player avatar (no user account)
 ```
 
-- **Writes are atomic** — each new player or game is a single `appendFileSync` call, eliminating read-modify-write race conditions.
+- **Writes are atomic** — each new user, player or game is a single `appendFileSync` call, eliminating read-modify-write race conditions.
 - **Ratings are never stored** — they are always derived by replaying the game log, so they can never become stale or corrupted.
 - **Snapshots** are taken automatically on startup if the latest is ≥ 30 days old. On restart, only games logged *after* the snapshot are replayed, keeping cold-start time bounded.
 - **Snapshot safety** — a snapshot is never written for a league with zero players, and a snapshot with an empty player list is ignored on load (falls back to full replay from `players.jsonl`). This prevents a newly-created league from poisoning future cold loads.
 - **In-memory cache** — each league's derived state is cached in memory after the first request. Switching between leagues never triggers a re-replay. Cache entries are updated in-place on every write.
+- **User avatars** — stored globally at `data/avatars/<userId>.jpg` so a single upload applies across all leagues. Guest players (no account) store their avatar per-league at `data/<league>/avatars/<playerId>.jpg`.
+- **Claim events** — when a user claims a guest player, a `{ _claim: true, id, userId }` line is appended to `players.jsonl`. This is replayed on cold load so the link survives restarts.
 - **Storage location** is controlled by the `DATA_DIR` environment variable: set automatically by `fly.toml` (Fly.io volume) or `docker-compose.yml` (local volume mount); falls back to `./data` for local development.
 - A manual snapshot can be forced via `POST /api/admin/snapshot?league=pool`.
 - Back up the entire `data/` folder regularly to preserve league history.

@@ -1066,6 +1066,51 @@ The frontend renders a **"This is me"** button inline with the player name in th
 
 ---
 
+### 32. User-Scoped Avatars
+
+#### Problem
+
+Avatar uploads were saved per-player per-league (`data/<league>/avatars/<playerId>.jpg`). This meant a user who joined multiple leagues had to upload their photo separately in each one, and the photos could be different.
+
+#### Solution
+
+Avatars are now stored at the **user level**, not the player level:
+
+```
+data/
+  avatars/
+    <userId>.jpg     ← one photo per user, shared across all leagues
+  pool/
+    avatars/
+      <playerId>.jpg ← guest player photos (no user account) — unchanged
+```
+
+**Resolution logic (`resolveAvatarPath`):**
+- If the player has a `userId` → serve/save `data/avatars/<userId>.jpg`
+- If the player is a guest (no `userId`) → serve/save `data/<league>/avatars/<playerId>.jpg` as before
+
+**SVG initials fallback:**
+- The colour used for the initials avatar is now derived from `userId` (when present) rather than `playerId`, so the same user gets the same initials colour in every league.
+
+#### New helpers
+
+```js
+function userAvatarsDir()       → data/avatars/
+function userAvatarPath(userId) → data/avatars/<userId>.jpg
+function resolveAvatarPath(player, league) → user path if userId, else per-league path
+```
+
+#### No breaking changes
+
+- Existing guest player avatars stored per-league continue to work unchanged.
+- The avatar URL (`/api/players/:id/avatar?league=...`) is unchanged — resolution is handled server-side.
+
+#### Tests added
+
+- `User-scoped Avatar` describe block in `api.spec.js` — verifies that two players in different leagues who share a `userId` get the same SVG initials colour.
+
+---
+
 ## API Reference
 
 All routes accept a `?league=` query parameter (defaults to `pool`).
