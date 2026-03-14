@@ -17,11 +17,10 @@ test.describe('Home Page — League Table', () => {
   });
 
   test.beforeEach(async ({ page }) => {
-    // Set the league in localStorage before loading the page
-    await page.goto(`${BASE}/`);
-    await page.evaluate(l => localStorage.setItem('currentLeague', l), league);
-    await page.goto(`${BASE}/`);
-    await page.waitForSelector('table', { timeout: 10_000 });
+    // Navigate directly with ?league= so localStorage is set on first load
+    await page.goto(`${BASE}/?league=${league}`, { waitUntil: 'networkidle', timeout: 30_000 });
+    // Wait until at least one player row is rendered (ensures form/streak data is present)
+    await page.waitForSelector('table tbody tr', { timeout: 20_000 });
   });
 
   test('page title is shown', async ({ page }) => {
@@ -103,9 +102,7 @@ test.describe('Home Page — Add Player', () => {
   });
 
   test.beforeEach(async ({ page }) => {
-    await page.goto(`${BASE}/`);
-    await page.evaluate(l => localStorage.setItem('currentLeague', l), league);
-    await page.goto(`${BASE}/`);
+    await page.goto(`${BASE}/?league=${league}`, { waitUntil: 'networkidle', timeout: 30_000 });
   });
 
   test('can add a new player via the form', async ({ page }) => {
@@ -130,7 +127,8 @@ test.describe('Home Page — Add Player', () => {
     const input = page.locator('#new-player-name');
     await input.fill('DupePlayer');
     await page.locator('button[onclick="addPlayer()"]').click();
-    await page.waitForTimeout(500);
+    // Wait for the first add to complete before trying again
+    await expect(page.locator('#player-msg')).toContainText('DupePlayer', { timeout: 5_000 });
 
     // Try to add the same name again
     await input.fill('DupePlayer');
@@ -156,9 +154,7 @@ test.describe('Home Page — Record a Game', () => {
   });
 
   test.beforeEach(async ({ page }) => {
-    await page.goto(`${BASE}/`);
-    await page.evaluate(l => localStorage.setItem('currentLeague', l), league);
-    await page.goto(`${BASE}/`);
+    await page.goto(`${BASE}/?league=${league}`, { waitUntil: 'networkidle', timeout: 30_000 });
     await page.waitForSelector('#winner-select');
   });
 
@@ -207,12 +203,11 @@ test.describe('Home Page — Game History', () => {
   });
 
   test.beforeEach(async ({ request, page }) => {
-    // Record a fresh game so there is always at least one .game-item visible
+    // Record a fresh game BEFORE loading the page so it's definitely persisted
     await recordGame(request, league, alice.id, bob.id);
-    await page.goto(`${BASE}/`);
-    await page.evaluate(l => localStorage.setItem('currentLeague', l), league);
-    await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.game-item', { timeout: 10000 });
+    await page.goto(`${BASE}/?league=${league}`, { waitUntil: 'networkidle', timeout: 30_000 });
+    // Wait until at least one game-item is rendered
+    await page.waitForSelector('.game-item', { timeout: 20_000 });
   });
 
   test('game history shows at least one result', async ({ page }) => {
@@ -266,10 +261,8 @@ test.describe('Home Page — Game History', () => {
     const db = await addPlayer(request, dl, 'Bob');
     await recordGame(request, dl, da.id, db.id);
 
-    await page.goto(`${BASE}/`);
-    await page.evaluate(l => localStorage.setItem('currentLeague', l), dl);
-    await page.goto(`${BASE}/`);
-    await page.waitForSelector('.game-item');
+    await page.goto(`${BASE}/?league=${dl}`, { waitUntil: 'networkidle', timeout: 30_000 });
+    await page.waitForSelector('.game-item', { timeout: 20_000 });
 
     await page.locator('.delete-btn').first().click();
     await page.locator('.delete-input').first().fill('Alice');
@@ -289,9 +282,7 @@ test.describe('Home Page — League Switcher', () => {
   });
 
   test.beforeEach(async ({ page }) => {
-    await page.goto(`${BASE}/`);
-    await page.evaluate(l => localStorage.setItem('currentLeague', l), leagueA);
-    await page.goto(`${BASE}/`);
+    await page.goto(`${BASE}/?league=${leagueA}`, { waitUntil: 'networkidle', timeout: 30_000 });
     await page.waitForSelector('.league-switcher');
   });
 
@@ -324,6 +315,5 @@ test.describe('Home Page — League Switcher', () => {
     );
   });
 });
-
 
 

@@ -9,7 +9,8 @@ function formatLeagueName(slug) {
 }
 
 async function load() {
-  const league = localStorage.getItem('currentLeague') || 'pool';
+  const params = new URLSearchParams(window.location.search);
+  const league = params.get('league') || localStorage.getItem('currentLeague') || 'pool';
   document.querySelector('header p').textContent =
     `All-time bests — ${formatLeagueName(league)}`;
 

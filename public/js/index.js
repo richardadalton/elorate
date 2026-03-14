@@ -1,5 +1,8 @@
 // ── League state ──────────────────────────────────────────────────────────────
 
+// Allow ?league= URL param to override localStorage (useful for direct links and tests)
+const _urlLeague = new URLSearchParams(window.location.search).get('league');
+if (_urlLeague) localStorage.setItem('currentLeague', _urlLeague);
 let currentLeague = localStorage.getItem('currentLeague') || 'pool';
 
 function setLeague(league) {

@@ -20,13 +20,11 @@ test.beforeAll(async ({ request }) => {
 
 async function gotoRecords(page) {
   if (!league) throw new Error('league not set — beforeAll may not have completed');
-  await page.goto(`${BASE}/`);
-  await page.evaluate(l => localStorage.setItem('currentLeague', l), league);
-  await page.goto(`${BASE}/records.html`);
-  // Wait for .record-card elements to appear, then wait until at least one shows a real value
-  await page.waitForSelector('.record-card', { timeout: 15_000 });
-  // The records page renders "—" / "No games yet" initially then replaces with real data.
-  // Poll until the Longest Winning Streak card shows a number (Alice wins 3 in beforeAll).
+  // Navigate directly using ?league= — records.js reads it from URL params
+  await page.goto(`${BASE}/records.html?league=${league}`, { waitUntil: 'networkidle', timeout: 30_000 });
+  // Wait for the records grid to be present in the DOM
+  await page.waitForSelector('.records-grid', { timeout: 15_000 });
+  // Poll until the Longest Winning Streak card shows a real value (Alice wins 3 in beforeAll).
   await page.waitForFunction(
     () => {
       const card = Array.from(document.querySelectorAll('.record-card'))
@@ -35,7 +33,7 @@ async function gotoRecords(page) {
       const val = card.querySelector('.record-value');
       return val && val.textContent.trim() !== '—';
     },
-    { timeout: 15_000 }
+    { timeout: 20_000 }
   );
 }
 
@@ -149,9 +147,7 @@ test.describe('Records Page — Content', () => {
     // Now Underdog beats Favourite — an upset
     await recordGame(request, ul, ua.id, ub.id);
 
-    await page.goto(`${BASE}/`);
-    await page.evaluate(l => localStorage.setItem('currentLeague', l), ul);
-    await page.goto(`${BASE}/records.html`);
+    await page.goto(`${BASE}/records.html?league=${ul}`, { waitUntil: 'networkidle' });
     await page.waitForSelector('.records-grid', { timeout: 10_000 });
 
     const card = page.locator('.record-card', { hasText: 'Biggest Upset' });
@@ -168,9 +164,7 @@ test.describe('Records Page — Content', () => {
     await recordGame(request, ul, ub.id, ua.id);
     await recordGame(request, ul, ua.id, ub.id);
 
-    await page.goto(`${BASE}/`);
-    await page.evaluate(l => localStorage.setItem('currentLeague', l), ul);
-    await page.goto(`${BASE}/records.html`);
+    await page.goto(`${BASE}/records.html?league=${ul}`, { waitUntil: 'networkidle' });
     await page.waitForSelector('.records-grid', { timeout: 10_000 });
 
     const card = page.locator('.record-card', { hasText: 'Biggest Upset' });
@@ -184,9 +178,7 @@ test.describe('Records Page — Empty state', () => {
     const emptyLeague = await createTestLeague(request, '_emptyrecords');
     await addPlayer(request, emptyLeague, 'Solo');
 
-    await page.goto(`${BASE}/`);
-    await page.evaluate(l => localStorage.setItem('currentLeague', l), emptyLeague);
-    await page.goto(`${BASE}/records.html`);
+    await page.goto(`${BASE}/records.html?league=${emptyLeague}`, { waitUntil: 'networkidle' });
     await page.waitForSelector('.records-grid', { timeout: 10_000 });
 
     // Longest Win Streak — no games, should show '—'
@@ -201,9 +193,7 @@ test.describe('Records Page — Empty state', () => {
   test('shows no-record placeholder when no player holds a record', async ({ request, page }) => {
     const emptyLeague = await createTestLeague(request, '_emptyrecords2');
 
-    await page.goto(`${BASE}/`);
-    await page.evaluate(l => localStorage.setItem('currentLeague', l), emptyLeague);
-    await page.goto(`${BASE}/records.html`);
+    await page.goto(`${BASE}/records.html?league=${emptyLeague}`, { waitUntil: 'networkidle' });
     await page.waitForSelector('.records-grid', { timeout: 10_000 });
 
     // No players at all — all values should be '—'

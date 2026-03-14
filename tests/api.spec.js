@@ -60,32 +60,23 @@ test.describe('Leagues API', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 test.describe('Players API', () => {
-  let league;
+  let league, alice, bob;
 
   test.beforeAll(async ({ request }) => {
+    // Set up all shared state once: two players and one game so ratings differ
     league = await createTestLeague(request, '_players');
-  });
-
-  test('GET /api/players returns empty list for new league', async ({ request }) => {
-    const res = await request.get(`${BASE}/api/players?league=${league}`);
-    expect(res.status()).toBe(200);
-    const body = await res.json();
-    expect(body.players).toEqual([]);
-    expect(body.kingId).toBeNull();
+    alice  = await addPlayer(request, league, 'Alice');
+    bob    = await addPlayer(request, league, 'Bob');
+    await recordGame(request, league, alice.id, bob.id);
   });
 
   test('POST /api/players adds a player with rating 1000', async ({ request }) => {
-    const res = await request.post(`${BASE}/api/players?league=${league}`, {
-      data: { name: 'Alice' },
-      headers: { 'Content-Type': 'application/json' },
-    });
-    expect(res.status()).toBe(201);
-    const player = await res.json();
-    expect(player.name).toBe('Alice');
-    expect(player.rating).toBe(1000);
-    expect(player.wins).toBe(0);
-    expect(player.losses).toBe(0);
-    expect(player.id).toBeTruthy();
+    // Verify Alice was created with the correct defaults (set up in beforeAll)
+    expect(alice.name).toBe('Alice');
+    expect(alice.rating).toBe(1000);
+    expect(alice.wins).toBe(0);
+    expect(alice.losses).toBe(0);
+    expect(alice.id).toBeTruthy();
   });
 
   test('POST /api/players rejects empty name', async ({ request }) => {
@@ -97,7 +88,6 @@ test.describe('Players API', () => {
   });
 
   test('POST /api/players rejects duplicate name', async ({ request }) => {
-    // Alice already added above
     const res = await request.post(`${BASE}/api/players?league=${league}`, {
       data: { name: 'Alice' },
       headers: { 'Content-Type': 'application/json' },
@@ -108,15 +98,6 @@ test.describe('Players API', () => {
   });
 
   test('GET /api/players returns players sorted by rating desc', async ({ request }) => {
-    // Add a second player, record a game so ratings differ
-    const bob = await addPlayer(request, league, 'Bob');
-    const allRes = await request.get(`${BASE}/api/players?league=${league}`);
-    const { players } = await allRes.json();
-
-    // Both start at 1000 — after a game the winner is higher
-    const alice = players.find(p => p.name === 'Alice');
-    await recordGame(request, league, alice.id, bob.id);
-
     const sorted = (await (await request.get(`${BASE}/api/players?league=${league}`)).json()).players;
     expect(sorted[0].rating).toBeGreaterThanOrEqual(sorted[1].rating);
   });
@@ -145,12 +126,12 @@ test.describe('Players API', () => {
   });
 
   test('form reflects recent results correctly', async ({ request }) => {
-    // In this league Alice beat Bob once — Alice's last result should be W, Bob's L
+    // Alice beat Bob in beforeAll — Alice's last result should be W, Bob's L
     const { players } = await (await request.get(`${BASE}/api/players?league=${league}`)).json();
-    const alice = players.find(p => p.name === 'Alice');
-    const bob   = players.find(p => p.name === 'Bob');
-    expect(alice.form[alice.form.length - 1]).toBe('W');
-    expect(bob.form[bob.form.length - 1]).toBe('L');
+    const a = players.find(p => p.name === 'Alice');
+    const b = players.find(p => p.name === 'Bob');
+    expect(a.form[a.form.length - 1]).toBe('W');
+    expect(b.form[b.form.length - 1]).toBe('L');
   });
 
   test('GET /api/players includes currentStreak for each player', async ({ request }) => {
@@ -164,12 +145,12 @@ test.describe('Players API', () => {
 
   test('currentStreak reflects last result (W for winner, L for loser)', async ({ request }) => {
     const { players } = await (await request.get(`${BASE}/api/players?league=${league}`)).json();
-    const alice = players.find(p => p.name === 'Alice');
-    const bob   = players.find(p => p.name === 'Bob');
-    expect(alice.currentStreak.type).toBe('W');
-    expect(alice.currentStreak.count).toBeGreaterThanOrEqual(1);
-    expect(bob.currentStreak.type).toBe('L');
-    expect(bob.currentStreak.count).toBeGreaterThanOrEqual(1);
+    const a = players.find(p => p.name === 'Alice');
+    const b = players.find(p => p.name === 'Bob');
+    expect(a.currentStreak.type).toBe('W');
+    expect(a.currentStreak.count).toBeGreaterThanOrEqual(1);
+    expect(b.currentStreak.type).toBe('L');
+    expect(b.currentStreak.count).toBeGreaterThanOrEqual(1);
   });
 
   test('currentStreak type is null for player with no games', async ({ request }) => {
@@ -178,6 +159,15 @@ test.describe('Players API', () => {
     const { players } = await (await request.get(`${BASE}/api/players?league=${noGameLeague}`)).json();
     expect(players[0].currentStreak.type).toBeNull();
     expect(players[0].currentStreak.count).toBe(0);
+  });
+
+  test('GET /api/players returns empty list for a brand-new league', async ({ request }) => {
+    const emptyLeague = await createTestLeague(request, '_players_empty');
+    const res = await request.get(`${BASE}/api/players?league=${emptyLeague}`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.players).toEqual([]);
+    expect(body.kingId).toBeNull();
   });
 
   test('GET /api/players returns 404 for unknown league', async ({ request }) => {

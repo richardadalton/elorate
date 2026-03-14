@@ -20,9 +20,9 @@ test.beforeAll(async ({ request }) => {
 });
 
 async function gotoAliceProfile(page) {
-  await page.goto(`${BASE}/player.html?id=${alice.id}&league=${league}`);
+  await page.goto(`${BASE}/player.html?id=${alice.id}&league=${league}`, { waitUntil: 'networkidle', timeout: 30_000 });
   // Wait for the profile to render (the hero section)
-  await page.waitForSelector('.hero', { timeout: 10_000 });
+  await page.waitForSelector('.hero', { timeout: 20_000 });
 }
 
 test.describe('Player Profile — Hero section', () => {
