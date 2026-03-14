@@ -1,8 +1,32 @@
 # 🎱 League Tracker
 
-A multiplayer league tracker with **ELO ratings**, player profiles, game history, and all-time records. Supports **multiple independent leagues** (Pool, Snooker, Chess, Backgammon — anything you like). Run it on your local network so anyone can record results from their phone or browser.
+---
+
+## About This Project
+
+This project was an **experiment in AI-assisted development**. Every line of code was written by [GitHub Copilot](https://github.com/features/copilot) (powered by Claude). No code was written by hand.
+
+The goal was to explore how far a non-trivial application could be taken through conversation alone — starting from a blank project and evolving it iteratively based on feedback, questions, and design discussions.
+
+### How the human influenced the project
+
+While the AI wrote all the code, the direction, priorities, and many of the key design decisions came from the conversations. Some examples:
+
+- **Choosing the domain** — a pool league tracker, something real and personal rather than a toy example
+- **Questioning architectural choices** — e.g. *"If we switch between leagues will we need to replay the log every time?"* led to the in-memory cache design
+- **Pushing for cleaner data models** — the move to append-only JSONL files, the removal of stored ratings from the game log, and the player-aggregate approach all came from probing questions like *"Do we actually need this in the file?"* and *"How about we stop storing the impact of individual games on ratings entirely?"*
+- **Scope decisions** — choosing which features to add (badges, King of the Hill, rival/nemesis, form guide, avatars), which to remove (longest losing streak record, ELO history chart), and which to defer
+- **Identifying bugs** — spotting that the Grand Slam badge behaved inconsistently for tied records, that new players with no games were eligible for ELO records, and that avatars were attached to players rather than users
+- **Deployment decisions** — choosing Fly.io, Docker, and the volume mount approach for persistent data
+- **Design taste** — UI layout decisions, naming (Grand Slam, King of the Hill, Nemesis), and the overall aesthetic direction
+- **Knowing when to stop** — the project was deliberately kept as a lean, vanilla HTML/CSS/JS app with no frontend framework, no database, and no build step
+
+### What this shows
+
+A focused, production-ready web application with a thoughtful architecture can be built entirely through conversation with an AI assistant in **~20–25 hours of active effort** across 3 days. The human's role shifts from writing code to making decisions, asking the right questions, and knowing what good looks like.
 
 ---
+
 
 ## Features
 
