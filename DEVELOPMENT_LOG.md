@@ -445,7 +445,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
 EXPOSE 3000
-ENV DATA_DIR=/app/data
+# DATA_DIR is injected at runtime via fly.toml or docker-compose.yml
 CMD ["node", "index.js"]
 ```
 
@@ -543,6 +543,50 @@ If a bad snapshot already exists on disk (e.g. the Fly.io volume, or another mac
 | Players are visible even if a league snapshot has zero players | Snapshot fallback to `players.jsonl` works correctly |
 
 ---
+
+### 25. Fly.io Volume Mount Bug — DATA_DIR Not Honoured
+
+#### Symptoms
+Deploying an update to Fly.io appeared to wipe all data. The live app showed an empty league table after each `fly deploy`.
+
+#### Investigation
+- The Fly.io volume (`league_data`, mounted at `/data`) existed and was correctly attached to the machine.
+- `fly ssh console` confirmed `DATA_DIR=/data` was set in the machine environment (from `fly.toml [env]`).
+- However, inspecting `/data` on the machine showed only `lost+found` — no league data was ever written there.
+
+#### Root cause
+`index.js` resolved the data directory as:
+
+```js
+const DATA_DIR = process.env.TEST_DATA_DIR || path.join(__dirname, 'data');
+```
+
+It only checked `TEST_DATA_DIR` (the test isolation variable). The `DATA_DIR` environment variable set by `fly.toml` and `docker-compose.yml` was **never read**. The app always fell back to `path.join(__dirname, 'data')` — i.e. `/app/data` inside the container's ephemeral filesystem — which is wiped on every deploy.
+
+The Fly.io volume at `/data` was mounted correctly but completely unused.
+
+#### Fix
+
+```js
+const DATA_DIR = process.env.TEST_DATA_DIR
+              || process.env.DATA_DIR
+              || path.join(__dirname, 'data');
+```
+
+Priority order:
+1. `TEST_DATA_DIR` — used by Playwright tests (isolated temp directory)
+2. `DATA_DIR` — used by Fly.io and Docker Compose (persistent volume)
+3. `./data` relative to `index.js` — local development default
+
+#### Dockerfile cleanup
+Removed the `ENV DATA_DIR=/app/data` line from the Dockerfile. Having a hardcoded default in the image that pointed to the wrong path was misleading. The correct path is always injected at runtime via `fly.toml` or `docker-compose.yml`. A comment now documents all three runtime environments.
+
+#### Note on initial data loss
+The first successful deploy started with an empty volume because the original failed deploy (blocked on billing) had already created the volume but never written to it. No data was actually lost — the app simply started fresh on Fly.io. Future deploys will preserve data correctly now that `DATA_DIR` is read.
+
+---
+
+## Tech Stack
 
 | Layer | Technology |
 |-------|------------|

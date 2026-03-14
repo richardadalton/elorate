@@ -7,7 +7,7 @@ const sharp   = require('sharp');
 
 const app  = express();
 const PORT = process.env.TEST_PORT ? parseInt(process.env.TEST_PORT) : 3000;
-const DATA_DIR = process.env.TEST_DATA_DIR || path.join(__dirname, 'data');
+const DATA_DIR = process.env.TEST_DATA_DIR || process.env.DATA_DIR || path.join(__dirname, 'data');
 
 // ── Append-only persistence ───────────────────────────────────────────────────
 //

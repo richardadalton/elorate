@@ -263,6 +263,7 @@ data/
 - **Snapshots** are taken automatically on startup if the latest is ≥ 30 days old. On restart, only games logged *after* the snapshot are replayed, keeping cold-start time bounded.
 - **Snapshot safety** — a snapshot is never written for a league with zero players, and a snapshot with an empty player list is ignored on load (falls back to full replay from `players.jsonl`). This prevents a newly-created league from poisoning future cold loads.
 - **In-memory cache** — each league's derived state is cached in memory after the first request. Switching between leagues never triggers a re-replay. Cache entries are updated in-place on every write.
+- **Storage location** is controlled by the `DATA_DIR` environment variable: set automatically by `fly.toml` (Fly.io volume) or `docker-compose.yml` (local volume mount); falls back to `./data` for local development.
 - A manual snapshot can be forced via `POST /api/admin/snapshot?league=pool`.
 - Back up the entire `data/` folder regularly to preserve league history.
 
