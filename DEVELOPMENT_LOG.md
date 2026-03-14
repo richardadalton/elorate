@@ -391,6 +391,77 @@ npm install multer sharp
 
 ---
 
+### 20. Current Streak in the League Table
+
+- **Decision:** Added a **Streak** column to the home page league table showing each player's current active streak as a coloured pill — e.g. `W3` (three consecutive wins) or `L2` (two consecutive losses). Players with no games show `—`.
+- **Rationale:** The streak was already computed per-player on the profile page; exposing it in the league table gives an immediate "hot/cold" read on all players at a glance without navigating away.
+
+#### Backend
+- `GET /api/players` now computes `currentStreak: { type, count }` alongside the existing `form` array.
+- Logic: iterate the player's games in chronological order, maintaining separate win/loss counters that reset on a result change. On completion, emit whichever counter was last active (`type: 'W'` or `'L'`). Players with no games return `{ type: null, count: 0 }`.
+
+#### Frontend (`public/js/index.js`, `public/css/index.css`)
+- New `streak-cell` column added between Win% and Form columns.
+- Green `.streak-w` pill for win streaks, red `.streak-l` pill for loss streaks, muted `.streak-none` dash for no games.
+- Table header updated with `streak-head` "Streak" column.
+
+#### Tests added (7 new, 136 → 143 total)
+
+| Test | Type |
+|---|---|
+| GET /api/players includes currentStreak for each player | API |
+| currentStreak reflects last result (W for winner, L for loser) | API |
+| currentStreak type is null for player with no games | API |
+| streak column header is shown | UI |
+| streak pill is shown for players who have played | UI |
+| winner has a green W streak pill | UI |
+| loser has a red L streak pill | UI |
+
+---
+
+### 21. Docker Support
+
+#### Motivation
+The app runs fine locally with `node index.js`, but sharing it with others or deploying it to a server requires them to install the correct Node version and run `npm install` — including compiling `sharp`'s native binaries, which can fail across platforms. Docker packages everything into a single, reproducible Linux container that runs identically anywhere.
+
+#### Design decisions
+
+| Concern | Decision |
+|---|---|
+| **Base image** | `node:22-alpine` — minimal Linux image (~50 MB vs ~900 MB for full Node image) |
+| **sharp on Alpine** | No native build tools needed — sharp 0.34+ ships pre-built binaries for Alpine |
+| **Dev dependencies** | Excluded via `npm ci --omit=dev` — Playwright and its browsers are not bundled |
+| **Data persistence** | `DATA_DIR` environment variable already existed for tests; Docker Compose sets it to `/data` which is volume-mounted to `./data` on the host |
+| **Code changes needed** | **None** — the `DATA_DIR` env var hook was already in place |
+| **Separate dev/prod modes** | Local `node index.js` for development; `docker compose up` for deployment — clearly documented in README |
+
+#### Files added
+
+**`Dockerfile`**
+```dockerfile
+FROM node:22-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY . .
+EXPOSE 3000
+ENV DATA_DIR=/app/data
+CMD ["node", "index.js"]
+```
+
+**`docker-compose.yml`**
+- Sets `DATA_DIR=/data` so the app writes to the volume mount path
+- Mounts `./data` on the host to `/data` in the container — data survives container restarts and rebuilds
+- `restart: unless-stopped` for automatic recovery from crashes
+
+**`.dockerignore`**
+- Excludes `node_modules`, `data/`, `tests/`, `playwright-report/`, `.git` — keeps the image lean and avoids bundling the host's `node_modules` or test artefacts
+
+#### Why Docker Swarm / Kubernetes are not relevant
+The append-only file storage and in-memory cache are both per-process. Running multiple container instances would result in diverging datasets and stale caches. Horizontal scaling requires moving to a shared database first. Docker Compose (single container) is the appropriate tool at this scale.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -402,6 +473,7 @@ npm install multer sharp
 | Avatar storage | JPEG files in `data/<league>/avatars/`, SVG initials fallback generated server-side |
 | Charts | Chart.js (ELO history chart on profile page) |
 | Testing | Playwright (API + UI, 143 tests, retries: 1) |
+| Deployment | Docker + Docker Compose |
 | Version control | Git + GitHub |
 
 ---
@@ -412,6 +484,9 @@ npm install multer sharp
 pool_league/
 ├── index.js               # Express server & all API routes
 ├── package.json
+├── Dockerfile             # Production container image (node:22-alpine)
+├── docker-compose.yml     # Single-container deployment with data volume
+├── .dockerignore          # Excludes node_modules, data/, tests/, .git from image
 ├── playwright.config.js   # Playwright configuration (port 3001, isolated data dir)
 ├── README.md
 ├── DEVELOPMENT_LOG.md     # This file

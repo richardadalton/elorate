@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # Tell the app to store league data in the mounted volume, not inside
+      # the container's own filesystem (which is lost on container restart).
+      DATA_DIR: /data
+    volumes:
+      # Mount the host's ./data directory into the container at /data.
+      # League files (players.jsonl, games.jsonl, avatars/, snapshots/) are
+      # written here and survive container restarts and re-builds.
+      - ./data:/data
+    restart: unless-stopped
+

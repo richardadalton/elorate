@@ -1,0 +1,22 @@
+# Dependencies — reinstalled inside the container by npm ci
+node_modules
+
+# Test artefacts — not needed at runtime
+test-results
+playwright-report
+tests
+
+# Playwright config and browsers
+playwright.config.js
+
+# Local data — provided at runtime via the Docker volume
+data
+
+# Git history
+.git
+.gitignore
+
+# Editor / OS noise
+.DS_Store
+*.log
+

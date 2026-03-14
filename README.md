@@ -40,39 +40,99 @@ A local multiplayer league tracker with **ELO ratings**, player profiles, game h
 - **Frontend:** Vanilla HTML, CSS, and JavaScript
 - **Data storage:** Append-only JSONL files per league in `data/<league>/`, with monthly snapshots, in-memory cache, and an `avatars/` directory per league
 - **Testing:** [Playwright](https://playwright.dev/) (end-to-end API & UI tests)
+- **Deployment:** [Docker](https://www.docker.com/) + Docker Compose
 
 ---
 
 ## Getting Started
 
-### Prerequisites
+There are two ways to run the app:
 
-- [Node.js](https://nodejs.org/) (v14 or higher)
+| | Local (development) | Docker (deployment) |
+|---|---|---|
+| **Requires** | Node.js v18+ | Docker Desktop |
+| **Best for** | Developing & debugging | Sharing or running on a server |
+| **Start command** | `npm start` | `docker compose up` |
+| **Data location** | `./data/` | `./data/` (via volume mount) |
 
-### Installation
+---
+
+### Option 1 — Run locally (development)
+
+#### Prerequisites
+
+- [Node.js](https://nodejs.org/) v18 or higher
+
+#### Install dependencies
 
 ```bash
 npm install
 ```
 
-### Running the Server
+#### Start the server
 
 ```bash
 npm start
 ```
 
-The server will start on port **3000**. Open your browser and go to:
+The server starts on port **3000**. Open your browser at:
 
 - **Local:** [http://localhost:3000](http://localhost:3000)
-- **Network:** `http://<your-local-ip>:3000` (displayed in the terminal on startup)
+- **Network:** `http://<your-local-ip>:3000` (printed in the terminal on startup)
+
+---
+
+### Option 2 — Run in Docker
+
+#### Prerequisites
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Mac, Windows, or Linux)
+
+#### First run — build and start
+
+```bash
+docker compose up --build
+```
+
+This builds the image and starts the container. The app is available at [http://localhost:3000](http://localhost:3000).
+
+#### Subsequent starts
+
+```bash
+docker compose up
+```
+
+#### Run in the background
+
+```bash
+docker compose up -d
+```
+
+#### Stop the container
+
+```bash
+docker compose down
+```
+
+#### View live logs
+
+```bash
+docker compose logs -f
+```
+
+#### Data persistence
+
+League data is stored in the `./data/` directory on your machine (mounted into the container as a volume). It is **not** stored inside the container — your data survives container restarts, updates, and rebuilds automatically. Back up the `data/` folder regularly to preserve league history.
+
+> **Note:** The Docker image excludes test files and dev dependencies, so `npm test` must be run locally, not inside the container.
 
 ---
 
 ## Managing Leagues
 
-- A default **Pool** league is created automatically on first run (`data/pool.json`)
+- A default **Pool** league is created automatically on first run (`data/pool/`)
 - Use the **league switcher** in the header to switch between leagues
-- Click **＋ New** to create a new league — this creates a new data file automatically
+- Click **＋ New** to create a new league — this creates a new data directory automatically
 - The active league is remembered in `localStorage` per browser
 
 ---
