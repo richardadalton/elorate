@@ -1,3 +1,14 @@
+.profile-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.profile-topbar .back-link { margin-bottom: 0; }
+
 .back-link {
   display: inline-flex;
   align-items: center;
@@ -5,10 +16,25 @@
   color: var(--muted);
   text-decoration: none;
   font-size: 0.88rem;
-  margin-bottom: 28px;
   transition: color 0.15s;
 }
 .back-link:hover { color: var(--accent); }
+
+/* shared auth-nav styles */
+.auth-nav { display: flex; align-items: center; gap: 8px; }
+.auth-user { font-size: 0.85rem; color: var(--muted); }
+.btn-sm { padding: 5px 14px; font-size: 0.82rem; border-radius: 20px; }
+.btn-ghost {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--muted); cursor: pointer;
+}
+.btn-ghost:hover { border-color: var(--accent2); color: var(--accent); }
+a.btn-sm {
+  display: inline-flex; align-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #0f172a; border-radius: 20px; padding: 5px 14px;
+  font-size: 0.82rem; font-weight: 700; text-decoration: none;
+}
 
 .profile-wrap {
   max-width: 860px;
@@ -74,6 +100,13 @@
   gap: 4px;
 }
 
+.hero-name-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .hero-name {
   font-size: 1.8rem;
   font-weight: 700;
@@ -81,6 +114,27 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.btn-claim {
+  font-size: 0.8rem;
+  padding: 5px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.league-banner {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
 }
 
 .hero-position {

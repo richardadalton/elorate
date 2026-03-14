@@ -10,7 +10,10 @@
 <body>
 
 <div class="records-wrap">
-  <a class="back-link" href="/">← Back to League Table</a>
+  <div class="records-topbar">
+    <a class="back-link" href="/">← Back to League Table</a>
+    <div class="auth-nav" id="auth-nav"></div>
+  </div>
   <header>
     <h1>🏅 Records</h1>
     <p>All-time bests across every player</p>
@@ -18,6 +21,7 @@
   <div id="root"><div class="empty-state"><span class="spinner"></span></div></div>
 </div>
 
+<script src="/js/auth.js"></script>
 <script src="/js/records.js"></script>
 </body>
 </html>

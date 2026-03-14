@@ -10,7 +10,12 @@
 <body>
 
 <header>
-  <h1>🎱 <span id="league-title">Pool</span></h1>
+  <div class="header-top">
+    <h1>🎱 <span id="league-title">Pool</span></h1>
+    <div class="auth-nav" id="auth-nav">
+      <!-- populated by JS -->
+    </div>
+  </div>
   <p>ELO-rated leaderboard — track every game, rank every player</p>
   <div id="league-switcher" class="league-switcher"></div>
   <div id="new-league-form" class="new-league-form" style="display:none">
@@ -19,23 +24,30 @@
     <button class="btn" onclick="addLeague()">Create</button>
   </div>
   <div class="msg" id="league-msg"></div>
-  <nav>
-    <a class="nav-link" href="/records.html">🏅 Records</a>
-  </nav>
 </header>
 
 <div class="layout">
 
+  <!-- Join League banner (shown when logged in but not yet a member) -->
+  <div class="card join-banner" id="join-banner" style="display:none">
+    <span class="join-text">You're not in this league yet.</span>
+    <button class="btn" id="join-btn" onclick="joinLeague()">Join League</button>
+    <div class="msg" id="join-msg"></div>
+  </div>
+
   <!-- League Table -->
   <div class="card" id="league-card">
-    <h2><span class="icon">🏆</span> League Table</h2>
+    <div class="league-card-header">
+      <h2><span class="icon">🏆</span> <span id="league-table-title">Pool</span> League Table</h2>
+      <a class="nav-link" href="/records.html">🏅 Records</a>
+    </div>
     <div id="league-table-wrap">
       <div class="empty-state"><span class="spinner"></span></div>
     </div>
   </div>
 
   <!-- Record a Game -->
-  <div class="card">
+  <div class="card" id="record-card">
     <h2><span class="icon">🎯</span> Record a Game</h2>
     <div class="form-row">
       <select id="winner-select">
@@ -51,9 +63,10 @@
     <div class="msg" id="game-msg"></div>
   </div>
 
-  <!-- Add Player -->
-  <div class="card">
-    <h2><span class="icon">➕</span> Add Player</h2>
+  <!-- Add Player (admin / guest convenience) -->
+  <div class="card" id="add-player-card">
+    <h2><span class="icon">➕</span> Add Guest Player</h2>
+    <p class="card-hint">Add a one-off player who doesn't have an account.</p>
     <div class="form-row">
       <input type="text" id="new-player-name" placeholder="Player name…" maxlength="40"
              onkeydown="if(event.key==='Enter') addPlayer()" />

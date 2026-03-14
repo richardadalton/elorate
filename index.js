@@ -1,9 +1,11 @@
-const express = require('express');
-const fs      = require('fs');
-const path    = require('path');
-const os      = require('os');
-const multer  = require('multer');
-const sharp   = require('sharp');
+const express  = require('express');
+const fs        = require('fs');
+const path      = require('path');
+const os        = require('os');
+const multer    = require('multer');
+const sharp     = require('sharp');
+const session   = require('express-session');
+const bcrypt    = require('bcrypt');
 
 const app  = express();
 const PORT = process.env.TEST_PORT ? parseInt(process.env.TEST_PORT) : 3000;
@@ -15,6 +17,31 @@ const INITIAL_RATING    = 1000; // ELO rating assigned to every new player
 const AVATAR_MAX_BYTES  = 5 * 1024 * 1024; // 5 MB upload limit
 const AVATAR_CACHE_SECS = 86400;            // 24 h browser cache for uploaded avatars
 const SNAPSHOT_DAYS     = 30;               // auto-snapshot cadence
+const BCRYPT_ROUNDS     = 10;               // bcrypt cost factor
+
+// ── User storage ──────────────────────────────────────────────────────────────
+// Users are global (not per-league): data/users.jsonl
+// Each line: { id, name, email, passwordHash, createdAt }
+
+function usersPath() {
+  return path.join(DATA_DIR, 'users.jsonl');
+}
+
+function ensureUsersFile() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(usersPath())) fs.writeFileSync(usersPath(), '');
+}
+
+function readUsers() {
+  ensureUsersFile();
+  const text = fs.readFileSync(usersPath(), 'utf8');
+  return text.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
+}
+
+function appendUser(user) {
+  ensureUsersFile();
+  fs.appendFileSync(usersPath(), JSON.stringify(user) + '\n');
+}
 
 // ── Append-only persistence ───────────────────────────────────────────────────
 //
@@ -74,7 +101,17 @@ function readJsonl(filePath) {
   const deleted = new Set(
     lines.filter(l => l._tombstone).map(l => l.gameId)
   );
-  return lines.filter(l => !l._tombstone && !deleted.has(l.id));
+
+  // Apply claims: build a map of playerId → userId from _claim events
+  const claims = {};
+  lines.filter(l => l._claim).forEach(l => { claims[l.id] = l.userId; });
+
+  return lines
+    .filter(l => !l._tombstone && !l._claim && !deleted.has(l.id))
+    .map(l => {
+      if (claims[l.id]) return { ...l, userId: claims[l.id] };
+      return l;
+    });
 }
 
 /** Append a single object as a JSON line. */
@@ -204,6 +241,7 @@ function replayGames(basePlayers, games) {
     state.set(p.id, {
       id:           p.id,
       name:         p.name,
+      userId:       p.userId || null,
       registeredAt: p.registeredAt,
       rating:       typeof p.rating  === 'number' ? p.rating  : INITIAL_RATING,
       wins:         typeof p.wins    === 'number' ? p.wins    : 0,
@@ -466,7 +504,80 @@ function computeH2H(player, playerGames, players) {
 // ── Middleware ────────────────────────────────────────────────────────────────
 
 app.use(express.json());
+app.use(session({
+  secret:            process.env.SESSION_SECRET || 'pool_league_dev_secret',
+  resave:            false,
+  saveUninitialized: false,
+  cookie:            { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 }, // 7 days
+}));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── Auth routes ───────────────────────────────────────────────────────────────
+
+app.post('/api/auth/register', async (req, res) => {
+  const { name, email, password } = req.body;
+  if (!name || !name.trim())     return res.status(400).json({ error: 'Name is required' });
+  if (!email || !email.trim())   return res.status(400).json({ error: 'Email is required' });
+  if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+  const normEmail = email.trim().toLowerCase();
+  const users = readUsers();
+  if (users.find(u => u.email === normEmail)) {
+    return res.status(400).json({ error: 'An account with that email already exists' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  const user = {
+    id:           `usr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name:         name.trim(),
+    email:        normEmail,
+    passwordHash,
+    createdAt:    new Date().toISOString(),
+  };
+  appendUser(user);
+
+  req.session.userId = user.id;
+  res.status(201).json({ id: user.id, name: user.name, email: user.email });
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+
+  const users = readUsers();
+  const user  = users.find(u => u.email === email.trim().toLowerCase());
+  if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+
+  const match = await bcrypt.compare(password, user.passwordHash);
+  if (!match) return res.status(401).json({ error: 'Invalid email or password' });
+
+  req.session.userId = user.id;
+  res.json({ id: user.id, name: user.name, email: user.email });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get('/api/auth/me', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
+  const users = readUsers();
+  const user  = users.find(u => u.id === req.session.userId);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  res.json({ id: user.id, name: user.name, email: user.email });
+});
+
+// GET /api/auth/memberships — map of league slug → playerId for the logged-in user
+app.get('/api/auth/memberships', (req, res) => {
+  if (!req.session.userId) return res.json({});
+  const memberships = {};
+  for (const league of getLeagues()) {
+    const { players } = getCache(league);
+    const player = players.find(p => p.userId === req.session.userId);
+    if (player) memberships[league] = player.id;
+  }
+  res.json(memberships);
+});
 
 // ── League routes ─────────────────────────────────────────────────────────────
 
@@ -525,6 +636,76 @@ app.get('/api/players', (req, res) => {
   res.json({ players: result, kingId });
 });
 
+// POST /api/leagues/:league/join — logged-in user joins a league (creates their player)
+app.post('/api/leagues/:league/join', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
+
+  const league = req.params.league.toLowerCase();
+  if (!validLeague(league))  return res.status(400).json({ error: 'Invalid league' });
+  if (!leagueExists(league)) return res.status(404).json({ error: 'League not found' });
+
+  const users = readUsers();
+  const user  = users.find(u => u.id === req.session.userId);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+
+  const { players } = getCache(league);
+
+  // Already a member?
+  if (players.find(p => p.userId === user.id)) {
+    return res.status(400).json({ error: 'You are already in this league' });
+  }
+
+  const player = {
+    id:           `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name:         user.name,
+    userId:       user.id,
+    registeredAt: new Date().toISOString(),
+    rating:       INITIAL_RATING,
+    wins:         0,
+    losses:       0,
+  };
+
+  appendJsonl(playersPath(league), { id: player.id, name: player.name, userId: player.userId, registeredAt: player.registeredAt });
+  players.push(player);
+
+  res.status(201).json(player);
+});
+
+// POST /api/players/:id/claim — logged-in user claims an unclaimed guest player
+app.post('/api/players/:id/claim', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
+
+  const league = resolveLeague(req, res);
+  if (!league) return;
+
+  const users = readUsers();
+  const user  = users.find(u => u.id === req.session.userId);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+
+  const { players } = getCache(league);
+
+  // User must not already be a player in this league
+  if (players.find(p => p.userId === user.id)) {
+    return res.status(400).json({ error: 'You already have a player in this league' });
+  }
+
+  const player = players.find(p => p.id === req.params.id);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+
+  // Player must be unclaimed
+  if (player.userId) return res.status(400).json({ error: 'Player is already claimed' });
+
+  // Link the player to this user by appending a claim event
+  appendJsonl(playersPath(league), {
+    _claim: true, id: player.id, userId: user.id, claimedAt: new Date().toISOString(),
+  });
+
+  // Update cache in-place
+  player.userId = user.id;
+
+  res.json({ ok: true, playerId: player.id, userId: user.id });
+});
+
 app.post('/api/players', (req, res) => {
   const league = resolveLeague(req, res);
   if (!league) return;
@@ -538,16 +719,14 @@ app.post('/api/players', (req, res) => {
   const player = {
     id:           `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     name:         name.trim(),
+    userId:       null,
     registeredAt: new Date().toISOString(),
     rating:       INITIAL_RATING,
     wins:         0,
     losses:       0,
   };
 
-  // Append only the immutable identity fields to the log
-  appendJsonl(playersPath(league), { id: player.id, name: player.name, registeredAt: player.registeredAt });
-
-  // Update cache in-place
+  appendJsonl(playersPath(league), { id: player.id, name: player.name, userId: player.userId, registeredAt: player.registeredAt });
   players.push(player);
 
   res.status(201).json(player);
@@ -572,11 +751,20 @@ app.get('/api/players/:id/profile', (req, res) => {
   const { rivals, nemeses } = computeH2H(player, playerGames, players);
   const { recHolders } = computeRecordMaps(players, games);
 
+  // claimable: true if player has no userId AND the requesting user is logged in
+  // AND the requesting user doesn't already have a player in this league
+  const requestingUserId = req.session.userId || null;
+  const userAlreadyInLeague = requestingUserId
+    ? players.some(p => p.userId === requestingUserId && p.id !== player.id)
+    : false;
+  const claimable = !player.userId && !!requestingUserId && !userAlreadyInLeague;
+
   res.json({
     id: player.id, name: player.name, rating: player.rating,
     position, totalPlayers: players.length,
     wins: player.wins, losses: player.losses, played: total,
     winPct: total ? Math.round((player.wins / total) * 100) : 0,
+    claimable,
     results,
     longestWinStreak:  stats.longestWinStreak,
     longestLossStreak: stats.longestLossStreak,

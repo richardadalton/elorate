@@ -8,8 +8,11 @@ let currentLeague = localStorage.getItem('currentLeague') || 'pool';
 function setLeague(league) {
   currentLeague = league;
   localStorage.setItem('currentLeague', league);
-  document.getElementById('league-title').textContent = formatLeagueName(league);
+  const name = formatLeagueName(league);
+  document.getElementById('league-title').textContent = name;
+  document.getElementById('league-table-title').textContent = name;
   renderLeagueSwitcher(window._leagues || []);
+  updateJoinBanner();
   refresh();
 }
 
@@ -63,15 +66,20 @@ async function loadLeagueSwitcher() {
     currentLeague = leagues[0] || 'pool';
     localStorage.setItem('currentLeague', currentLeague);
   }
-  document.getElementById('league-title').textContent = formatLeagueName(currentLeague);
+  const name = formatLeagueName(currentLeague);
+  document.getElementById('league-title').textContent = name;
+  document.getElementById('league-table-title').textContent = name;
   renderLeagueSwitcher(leagues);
 }
 
 function renderLeagueSwitcher(leagues) {
   const wrap = document.getElementById('league-switcher');
+  const addBtn = currentUser
+    ? `<button class="league-pill add-league" onclick="toggleNewLeagueForm()">＋ New</button>`
+    : '';
   wrap.innerHTML = leagues.map(l => `
     <button class="league-pill${l === currentLeague ? ' active' : ''}" onclick="setLeague('${esc(l)}')">${esc(formatLeagueName(l))}</button>
-  `).join('') + `<button class="league-pill add-league" onclick="toggleNewLeagueForm()">＋ New</button>`;
+  `).join('') + addBtn;
 }
 
 function toggleNewLeagueForm() {
@@ -283,6 +291,73 @@ async function recordGame() {
   }
 }
 
+// ── Auth state ────────────────────────────────────────────────────────────────
+
+let currentUser = null;        // { id, name, email } or null
+let memberships = {};          // { leagueSlug: playerId }
+
+function renderAuthNav(user) {
+  const nav = document.getElementById('auth-nav');
+  if (user) {
+    nav.innerHTML = `
+      <span class="auth-user">👤 ${esc(user.name)}</span>
+      <button class="btn btn-sm btn-ghost" onclick="logout()">Sign Out</button>`;
+  } else {
+    nav.innerHTML = `
+      <a class="btn btn-sm btn-ghost" href="/login.html">Sign In</a>
+      <a class="btn btn-sm" href="/register.html">Register</a>`;
+  }
+  const show = user ? '' : 'none';
+  document.getElementById('record-card').style.display     = show;
+  document.getElementById('add-player-card').style.display = show;
+}
+
+function updateJoinBanner() {
+  const banner = document.getElementById('join-banner');
+  if (!currentUser) { banner.style.display = 'none'; return; }
+  const alreadyJoined = memberships[currentLeague];
+  banner.style.display = alreadyJoined ? 'none' : 'flex';
+}
+
+async function joinLeague() {
+  const btn = document.getElementById('join-btn');
+  btn.disabled = true;
+  try {
+    await api('POST', `/api/leagues/${currentLeague}/join`, {});
+    memberships = await api('GET', '/api/auth/memberships');
+    updateJoinBanner();
+    await refresh();
+  } catch (e) {
+    setMsg('join-msg', e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function logout() {
+  await api('POST', '/api/auth/logout', {});
+  currentUser = null;
+  memberships = {};
+  renderAuthNav(null);
+  updateJoinBanner();
+}
+
+async function loadAuthState() {
+  try {
+    currentUser = await api('GET', '/api/auth/me');
+  } catch {
+    currentUser = null;
+  }
+  try {
+    memberships = currentUser ? await api('GET', '/api/auth/memberships') : {};
+  } catch {
+    memberships = {};
+  }
+  renderAuthNav(currentUser);
+  updateJoinBanner();
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
-loadLeagueSwitcher().then(() => refresh());
+// Auth must resolve first so currentUser is set before renderLeagueSwitcher runs
+loadAuthState().then(() => loadLeagueSwitcher()).then(() => refresh());

@@ -993,17 +993,97 @@ pool_league/
 
 ---
 
+### 31. User Accounts & Authentication
+
+#### Design decisions
+
+| Concern | Decision |
+|---------|----------|
+| **Who can view the app** | Anyone — all leagues and records are publicly readable without an account |
+| **Who can record games / add guest players** | Signed-in users only — Record a Game and Add Guest Player cards are hidden when logged out |
+| **Who can create leagues** | Signed-in users only — ＋ New button only appears when logged in |
+| **How players are created** | Two paths: (1) user joins a league → player created linked to their account; (2) guest player added by name → `userId: null` |
+| **Claiming guest players** | A signed-in user who isn't yet in a league can claim an unclaimed guest player via a "This is me" button on the profile page — links the player to their account without changing any game history |
+| **Password storage** | bcrypt with 10 rounds — passwords never stored in plain text |
+| **Sessions** | `express-session` with in-memory store — a `SESSION_SECRET` env var can be set for production |
+| **User storage** | `data/users.jsonl` — global, not per-league, same append-only pattern as everything else |
+
+#### Data model
+
+**`data/users.jsonl`** — one line per user:
+```json
+{ "id": "usr_<ts>_<rand>", "name": "Richard", "email": "r@example.com", "passwordHash": "...", "createdAt": "..." }
+```
+
+**`data/<league>/players.jsonl`** — player records now include `userId`:
+```json
+{ "id": "...", "name": "Richard", "userId": "usr_abc123", "registeredAt": "..." }
+{ "id": "...", "name": "Guest", "userId": null, "registeredAt": "..." }
+```
+
+**Claim event** — appended to `players.jsonl` when a user claims a guest player:
+```json
+{ "_claim": true, "id": "<playerId>", "userId": "usr_abc123", "claimedAt": "..." }
+```
+`readJsonl` applies claim events during replay so the `userId` link survives server restarts.
+
+#### New API routes
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/auth/register` | Create account, auto-logs in |
+| `POST` | `/api/auth/login` | Sign in, sets session cookie |
+| `POST` | `/api/auth/logout` | Destroys session |
+| `GET` | `/api/auth/me` | Returns `{ id, name, email }` or 401 |
+| `GET` | `/api/auth/memberships` | Returns `{ leagueSlug: playerId }` map for the signed-in user |
+| `POST` | `/api/leagues/:league/join` | Creates a player linked to the signed-in user |
+| `POST` | `/api/players/:id/claim` | Links an unclaimed player to the signed-in user |
+
+#### Profile page — `claimable` flag
+`GET /api/players/:id/profile` returns `claimable: true` when:
+1. The player has no `userId`
+2. The request has a valid session (user is logged in)
+3. That user doesn't already have a player in the same league
+
+The frontend renders a **"This is me"** button inline with the player name in the hero section when `claimable` is true. After claiming, the page reloads and the button is gone.
+
+#### UI visibility rules
+- **Record a Game** card — hidden when not logged in
+- **Add Guest Player** card — hidden when not logged in
+- **＋ New** league button — hidden when not logged in
+- **Join League** banner — shown when logged in but not yet a member of the current league
+- **Sign In / Register** buttons — shown in top-right nav when logged out
+- **Username + Sign Out** — shown in top-right nav when logged in
+
+#### New pages
+- `/login.html` — email + password sign-in form
+- `/register.html` — name, email, password registration form
+- `/js/auth.js` — shared auth nav helper used by `player.html` and `records.html`
+
+#### Test suite changes
+- `tests/helpers.js` — added `registerAndLogin(request, suffix)` helper
+- `tests/home.spec.js` — Add Player, Record a Game, Game History, and League Switcher describe blocks now log in via `page.request.post` in `beforeEach` so the hidden cards are visible to tests
+
+---
+
 ## API Reference
 
 All routes accept a `?league=` query parameter (defaults to `pool`).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `POST` | `/api/auth/register` | Create a user account `{ name, email, password }` |
+| `POST` | `/api/auth/login` | Sign in `{ email, password }` |
+| `POST` | `/api/auth/logout` | Sign out (destroys session) |
+| `GET` | `/api/auth/me` | Get the currently signed-in user |
+| `GET` | `/api/auth/memberships` | Map of `{ leagueSlug: playerId }` for the signed-in user |
 | `GET` | `/api/leagues` | List all leagues |
 | `POST` | `/api/leagues` | Create a new league `{ name }` |
+| `POST` | `/api/leagues/:league/join` | Signed-in user joins a league (creates their player) |
 | `GET` | `/api/players?league=pool` | Get all players sorted by ELO |
-| `POST` | `/api/players?league=pool` | Add a new player `{ name }` |
-| `GET` | `/api/players/:id/profile?league=pool` | Get full stats for a player |
+| `POST` | `/api/players?league=pool` | Add a guest player `{ name }` (no account required) |
+| `POST` | `/api/players/:id/claim?league=pool` | Signed-in user claims an unclaimed guest player |
+| `GET` | `/api/players/:id/profile?league=pool` | Get full stats for a player (includes `claimable` flag) |
 | `GET` | `/api/players/:id/avatar?league=pool` | Get player avatar (JPEG or SVG initials fallback) |
 | `POST` | `/api/players/:id/avatar?league=pool` | Upload player avatar (multipart `avatar` field, max 5 MB) |
 | `GET` | `/api/games?league=pool` | Get all games (most recent first) |

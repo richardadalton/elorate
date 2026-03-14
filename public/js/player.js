@@ -6,6 +6,10 @@ function esc(str) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function formatLeagueName(slug) {
+  return slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 function ordinal(n) {
   const s = ['th','st','nd','rd'], v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
@@ -102,6 +106,9 @@ function renderProfile(p, league) {
     </div>`).join('');
 
   document.getElementById('root').innerHTML = `
+    <!-- League banner -->
+    <div class="league-banner">${esc(formatLeagueName(league))} League</div>
+
     <!-- Hero -->
     <div class="hero">
       <label class="hero-avatar-wrap" title="Click to upload photo">
@@ -110,7 +117,10 @@ function renderProfile(p, league) {
         <input type="file" accept="image/*" class="avatar-file-input" data-id="${esc(p.id)}" data-league="${esc(league)}" />
       </label>
       <div class="hero-info">
-        <div class="hero-name">${esc(p.name)}</div>
+        <div class="hero-name-row">
+          <div class="hero-name">${esc(p.name)}</div>
+          ${p.claimable ? `<button class="btn btn-claim" onclick="claimPlayer('${esc(p.id)}', '${esc(league)}')">This is me</button>` : ''}
+        </div>
         <div class="hero-rating">
           <span class="rating-value">${p.rating}</span>
           <span class="rating-label">ELO Rating</span>
@@ -293,6 +303,26 @@ function renderChart(history) {
       }
     }
   });
+}
+
+// ── Claim player ──────────────────────────────────────────────────────────────
+
+async function claimPlayer(playerId, league) {
+  const btn = document.querySelector('.btn-claim');
+  if (btn) { btn.disabled = true; btn.textContent = 'Claiming…'; }
+  try {
+    const res = await fetch(`/api/players/${playerId}/claim?league=${league}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to claim player');
+    // Reload the profile to reflect the claimed state (button disappears)
+    window.location.reload();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'This is me'; }
+    alert(e.message);
+  }
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

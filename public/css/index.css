@@ -3,6 +3,79 @@ header {
   margin-bottom: 36px;
 }
 
+/* top row: title left, auth nav right */
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.auth-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.auth-user {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.btn-sm {
+  padding: 5px 14px;
+  font-size: 0.82rem;
+  border-radius: 20px;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.btn-ghost:hover {
+  border-color: var(--accent2);
+  color: var(--accent);
+}
+
+/* Join League banner */
+.join-banner {
+  display: none;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, rgba(74,222,128,0.08), rgba(22,163,74,0.05));
+  border-color: var(--accent2);
+}
+
+.join-text {
+  flex: 1;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+/* Card hint text */
+.card-hint {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-bottom: 10px;
+}
+
+/* League table card header — title + Records link on same row */
+.league-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.league-card-header h2 {
+  margin-bottom: 0;
+}
+
 header h1 {
   font-size: 2rem;
   font-weight: 700;
@@ -293,7 +366,10 @@ input[type="text"]:focus, select:focus {
 
 select option { background: var(--surface); }
 
-button.btn {
+button.btn, a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   color: #0f172a;
   border: none;
@@ -304,9 +380,10 @@ button.btn {
   cursor: pointer;
   transition: opacity 0.15s;
   white-space: nowrap;
+  text-decoration: none;
 }
 
-button.btn:hover { opacity: 0.85; }
+button.btn:hover, a.btn:hover { opacity: 0.85; }
 button.btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .msg {

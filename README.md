@@ -1,15 +1,18 @@
 # 🎱 League Tracker
 
-A local multiplayer league tracker with **ELO ratings**, player profiles, game history, and all-time records. Supports **multiple independent leagues** (Pool, Snooker, Chess, Backgammon — anything you like). Run it on your local network so anyone can record results from their phone or browser.
+A multiplayer league tracker with **ELO ratings**, player profiles, game history, and all-time records. Supports **multiple independent leagues** (Pool, Snooker, Chess, Backgammon — anything you like). Run it on your local network so anyone can record results from their phone or browser.
 
 ---
 
 ## Features
 
-- **Multiple leagues** — each league has its own separate data file; switch between leagues from the home page or create new ones on the fly
+- **User accounts** — register and sign in to join leagues, record games, and claim your player profile. Guest players (added without an account) can be claimed later by signing in and clicking "This is me" on their profile page.
+- **Multiple leagues** — each league has its own separate data file; switch between leagues from the home page. Signed-in users can create new leagues via the **＋ New** button.
+- **Join a league** — signed-in users who aren't yet in a league see a **Join League** banner and can join with one click, automatically creating their player entry.
 - **ELO rating system** — ratings update automatically after every game
 - **League table** — players ranked by current ELO rating, with 👑 crown marking the King of the Hill, **player avatars**, and a **form guide** showing the last 5 results as green/red squares
 - **Player profiles** — detailed stats per player including:
+  - League name banner identifying which league the profile belongs to
   - Win/loss record & win percentage
   - Current streak, longest win streak, longest loss streak
   - Highest & lowest ELO ever reached
@@ -32,16 +35,16 @@ A local multiplayer league tracker with **ELO ratings**, player profiles, game h
   - Highest ever ELO rating
   - Biggest upset (largest rating deficit overcome by the winner)
   - Defend the Hill (longest consecutive run of wins while holding King of the Hill)
-- **Game history** — full log of all recorded results
+- **Game history** — full log of all recorded results with inline delete confirmation
 - **Network accessible** — accessible from any device on the same Wi-Fi
 
 ---
 
 ## Tech Stack
 
-- **Backend:** Node.js with [Express](https://expressjs.com/), [multer](https://github.com/expressjs/multer) (file uploads), [sharp](https://sharp.pixelplumbing.com/) (image processing)
+- **Backend:** Node.js with [Express](https://expressjs.com/), [multer](https://github.com/expressjs/multer) (file uploads), [sharp](https://sharp.pixelplumbing.com/) (image processing), [express-session](https://github.com/expressjs/session) (auth sessions), [bcrypt](https://github.com/kelektiv/node.bcrypt.js) (password hashing)
 - **Frontend:** Vanilla HTML, CSS, and JavaScript
-- **Data storage:** Append-only JSONL files per league in `data/<league>/`, with monthly snapshots, in-memory cache, and an `avatars/` directory per league
+- **Data storage:** Append-only JSONL files — one directory per league (`data/<league>/`), plus `data/users.jsonl` for user accounts. Monthly snapshots, in-memory cache, and an `avatars/` directory per league.
 - **Testing:** [Playwright](https://playwright.dev/) (end-to-end API & UI tests)
 - **Deployment:** [Docker](https://www.docker.com/) + Docker Compose
 
@@ -219,10 +222,17 @@ All game/player routes accept a `?league=` query parameter (defaults to `pool`).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `POST` | `/api/auth/register` | Create a user account `{ name, email, password }` |
+| `POST` | `/api/auth/login` | Sign in `{ email, password }` |
+| `POST` | `/api/auth/logout` | Sign out (destroys session) |
+| `GET` | `/api/auth/me` | Get the currently signed-in user |
+| `GET` | `/api/auth/memberships` | Map of `{ leagueSlug: playerId }` for the signed-in user |
 | `GET` | `/api/leagues` | List all leagues |
 | `POST` | `/api/leagues` | Create a new league `{ name }` |
+| `POST` | `/api/leagues/:league/join` | Signed-in user joins a league (creates their player) |
 | `GET` | `/api/players?league=pool` | Get all players sorted by rating |
-| `POST` | `/api/players?league=pool` | Add a new player `{ name }` |
+| `POST` | `/api/players?league=pool` | Add a guest player `{ name }` (no account required) |
+| `POST` | `/api/players/:id/claim?league=pool` | Signed-in user claims an unclaimed guest player |
 | `GET` | `/api/players/:id/profile?league=pool` | Get full stats for a player |
 | `GET` | `/api/games?league=pool` | Get all games (most recent first) |
 | `POST` | `/api/games?league=pool` | Record a game result `{ winnerId, loserId }` |

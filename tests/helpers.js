@@ -48,6 +48,31 @@ async function recordGame(request, league, winnerId, loserId) {
   return await res.json();
 }
 
-module.exports = { BASE, createTestLeague, addPlayer, recordGame };
+/**
+ * Register a test user and log in via the API.
+ * Returns { email, password } — use with page.goto after calling this
+ * so the session cookie is present in the browser context.
+ *
+ * Usage:
+ *   const creds = await registerAndLogin(request);
+ *   await page.goto(`${BASE}/?league=${league}`);
+ *   // page is now logged in
+ */
+async function registerAndLogin(request, suffix = '') {
+  const ts    = Date.now().toString().slice(-8);
+  const email = `test_${ts}${suffix}@test.com`;
+  const password = 'testpass123';
+  const name     = `Tester_${ts}${suffix}`;
+
+  // Register (also logs in via session)
+  const res = await request.post(`${BASE}/api/auth/register`, {
+    data: { name, email, password },
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok()) throw new Error(`Failed to register: ${await res.text()}`);
+  return { email, password, name };
+}
+
+module.exports = { BASE, createTestLeague, addPlayer, recordGame, registerAndLogin };
 
 

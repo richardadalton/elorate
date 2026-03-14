@@ -4,7 +4,7 @@
  */
 
 const { test, expect } = require('@playwright/test');
-const { BASE, createTestLeague, addPlayer, recordGame } = require('./helpers');
+const { BASE, createTestLeague, addPlayer, recordGame, registerAndLogin } = require('./helpers');
 
 test.describe('Home Page — League Table', () => {
   let league, alice, bob;
@@ -51,7 +51,7 @@ test.describe('Home Page — League Table', () => {
   });
 
   test('Records nav link is present', async ({ page }) => {
-    const link = page.locator('nav a', { hasText: 'Records' });
+    const link = page.locator('a', { hasText: 'Records' });
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute('href', /records\.html/);
   });
@@ -95,14 +95,21 @@ test.describe('Home Page — League Table', () => {
 });
 
 test.describe('Home Page — Add Player', () => {
-  let league;
+  let league, creds;
 
   test.beforeAll(async ({ request }) => {
     league = await createTestLeague(request, '_addplayer');
+    creds  = await registerAndLogin(request, '_addplayer');
   });
 
   test.beforeEach(async ({ page }) => {
+    // Log in via API so session cookie is set on this page context
+    await page.request.post(`${BASE}/api/auth/login`, {
+      data: { email: creds.email, password: creds.password },
+      headers: { 'Content-Type': 'application/json' },
+    });
     await page.goto(`${BASE}/?league=${league}`, { waitUntil: 'networkidle', timeout: 30_000 });
+    await page.waitForSelector('#add-player-card', { timeout: 20_000 });
   });
 
   test('can add a new player via the form', async ({ page }) => {
@@ -145,15 +152,20 @@ test.describe('Home Page — Add Player', () => {
 });
 
 test.describe('Home Page — Record a Game', () => {
-  let league, alice, bob;
+  let league, alice, bob, creds;
 
   test.beforeAll(async ({ request }) => {
     league = await createTestLeague(request, '_recordgame');
     alice  = await addPlayer(request, league, 'Alice');
     bob    = await addPlayer(request, league, 'Bob');
+    creds  = await registerAndLogin(request, '_recordgame');
   });
 
   test.beforeEach(async ({ page }) => {
+    await page.request.post(`${BASE}/api/auth/login`, {
+      data: { email: creds.email, password: creds.password },
+      headers: { 'Content-Type': 'application/json' },
+    });
     await page.goto(`${BASE}/?league=${league}`, { waitUntil: 'networkidle', timeout: 30_000 });
     await page.waitForSelector('#winner-select');
   });
@@ -194,19 +206,22 @@ test.describe('Home Page — Record a Game', () => {
 });
 
 test.describe('Home Page — Game History', () => {
-  let league, alice, bob;
+  let league, alice, bob, creds;
 
   test.beforeAll(async ({ request }) => {
     league = await createTestLeague(request, '_history');
     alice  = await addPlayer(request, league, 'Alice');
     bob    = await addPlayer(request, league, 'Bob');
+    creds  = await registerAndLogin(request, '_history');
   });
 
   test.beforeEach(async ({ request, page }) => {
-    // Record a fresh game BEFORE loading the page so it's definitely persisted
     await recordGame(request, league, alice.id, bob.id);
+    await page.request.post(`${BASE}/api/auth/login`, {
+      data: { email: creds.email, password: creds.password },
+      headers: { 'Content-Type': 'application/json' },
+    });
     await page.goto(`${BASE}/?league=${league}`, { waitUntil: 'networkidle', timeout: 30_000 });
-    // Wait until at least one game-item is rendered
     await page.waitForSelector('.game-item', { timeout: 20_000 });
   });
 
@@ -261,6 +276,10 @@ test.describe('Home Page — Game History', () => {
     const db = await addPlayer(request, dl, 'Bob');
     await recordGame(request, dl, da.id, db.id);
 
+    await page.request.post(`${BASE}/api/auth/login`, {
+      data: { email: creds.email, password: creds.password },
+      headers: { 'Content-Type': 'application/json' },
+    });
     await page.goto(`${BASE}/?league=${dl}`, { waitUntil: 'networkidle', timeout: 30_000 });
     await page.waitForSelector('.game-item', { timeout: 20_000 });
 
@@ -274,14 +293,19 @@ test.describe('Home Page — Game History', () => {
 });
 
 test.describe('Home Page — League Switcher', () => {
-  let leagueA, leagueB;
+  let leagueA, leagueB, creds;
 
   test.beforeAll(async ({ request }) => {
     leagueA = await createTestLeague(request, '_switchA');
     leagueB = await createTestLeague(request, '_switchB');
+    creds   = await registerAndLogin(request, '_switch');
   });
 
   test.beforeEach(async ({ page }) => {
+    await page.request.post(`${BASE}/api/auth/login`, {
+      data: { email: creds.email, password: creds.password },
+      headers: { 'Content-Type': 'application/json' },
+    });
     await page.goto(`${BASE}/?league=${leagueA}`, { waitUntil: 'networkidle', timeout: 30_000 });
     await page.waitForSelector('.league-switcher');
   });
