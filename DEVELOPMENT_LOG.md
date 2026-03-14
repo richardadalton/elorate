@@ -759,6 +759,80 @@ No behaviour change — purely a readability improvement that will avoid linter 
 
 ---
 
+### 29. Code Smell Fixes — Medium Severity
+
+Four medium-severity code smells were fixed.
+
+#### Smell 3 — Profile route handler was 80+ lines
+
+The `GET /api/players/:id/profile` route was a single 80-line function handling results history, streak stats, ELO history, rival/nemesis computation, badge logic, and response assembly all inline.
+
+**Fix:** Extracted two named helper functions:
+
+- **`computeProfileResults(player, playerGames, players)`** — builds the results history array (most-recent first), using the new `playerName()` helper
+- **`computeH2H(player, playerGames, players)`** — builds head-to-head stats for all opponents and derives `rivals` and `nemeses`, with all tie-breaking logic in one place
+
+The route handler is now ~20 lines — it calls the helpers and assembles the response.
+
+Also completed the fix from smell #1: the `GET /api/records` route still had its own inline streak/ELO loops. These were replaced with `computePlayerGameStats()` calls, making the route consistent with the rest of the codebase.
+
+#### Smell 4 — Opponent name lookup duplicated
+
+The pattern `(players.find(p => p.id === someId) || { name: 'Unknown' }).name` appeared in at least five places: the profile results map, the h2h loop, the records biggest-upset block, the games list route, and the records route.
+
+**Fix:** Added a `playerName(players, id)` helper function next to the other small path/file helpers:
+
+```js
+function playerName(players, id) {
+  return (players.find(p => p.id === id) || { name: 'Unknown' }).name;
+}
+```
+
+All five call sites updated to use it. The fallback `'Unknown'` now lives in exactly one place.
+
+#### Smell 5 — Magic number `1000` repeated ~5 times
+
+The starting ELO rating `1000` was hardcoded in `replayGames`, `coldLoad`, `computePlayerGameStats`, `computeBadges`, and `POST /api/players`. Additionally, `5 * 1024 * 1024` (5 MB), `86400` (24 h), and `30` (snapshot days) were unnamed inline literals.
+
+**Fix:** Added a constants block at the top of `index.js`:
+
+```js
+const INITIAL_RATING    = 1000;           // ELO rating for every new player
+const AVATAR_MAX_BYTES  = 5 * 1024 * 1024; // 5 MB upload limit
+const AVATAR_CACHE_SECS = 86400;           // 24 h browser cache for avatars
+const SNAPSHOT_DAYS     = 30;              // auto-snapshot cadence
+```
+
+All five `1000` occurrences replaced with `INITIAL_RATING`. The three other magic values replaced with their named constants throughout.
+
+#### Smell 6 — Giant Killer badge check was O(n²)
+
+`computeBadges` checked for the Giant Killer badge by iterating every game the player won, then for each win filtering the entire game log to find all games played before that point, reducing them to a ratings map, and finding the maximum. For a player with W wins and G total games, this was O(W × G).
+
+**Fix:** Replaced with a single O(G) forward pass over `allGames`, maintaining a `runningRatings` map that advances after each game:
+
+```js
+const runningRatings = {};
+allPlayers.forEach(p => { runningRatings[p.id] = INITIAL_RATING; });
+
+for (const g of allGames) {
+  const topRating = Math.max(...Object.values(runningRatings));
+  if (g.winnerId === player.id && runningRatings[g.loserId] >= topRating) {
+    earned.add('beat_top');
+  }
+  runningRatings[g.winnerId] = g.winnerRatingAfter;
+  runningRatings[g.loserId]  = g.loserRatingAfter;
+}
+```
+
+The `allGames` array is already stored chronologically in the cache, so no sort is needed.
+
+#### No behaviour changes
+
+All 167 tests pass unchanged.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |

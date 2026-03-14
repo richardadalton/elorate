@@ -9,6 +9,13 @@ const app  = express();
 const PORT = process.env.TEST_PORT ? parseInt(process.env.TEST_PORT) : 3000;
 const DATA_DIR = process.env.TEST_DATA_DIR || process.env.DATA_DIR || path.join(__dirname, 'data');
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const INITIAL_RATING    = 1000; // ELO rating assigned to every new player
+const AVATAR_MAX_BYTES  = 5 * 1024 * 1024; // 5 MB upload limit
+const AVATAR_CACHE_SECS = 86400;            // 24 h browser cache for uploaded avatars
+const SNAPSHOT_DAYS     = 30;               // auto-snapshot cadence
+
 // ── Append-only persistence ───────────────────────────────────────────────────
 //
 // Layout on disk (one sub-directory per league):
@@ -48,6 +55,11 @@ function avatarsDir(league) {
 }
 function avatarPath(league, playerId) {
   return path.join(avatarsDir(league), `${playerId}.jpg`);
+}
+
+/** Look up a player's name by id, falling back to 'Unknown'. */
+function playerName(players, id) {
+  return (players.find(p => p.id === id) || { name: 'Unknown' }).name;
 }
 
 /** Read all JSON lines from a file, skipping blank lines. */
@@ -112,7 +124,7 @@ function clearSnapshots(league) {
 function maybeAutoSnapshot(league, players) {
   if (players.length === 0) return;   // never snapshot an empty league
   const snap = loadLatestSnapshot(league);
-  if (!snap || daysSince(snap.snapshotAt) >= 30) writeSnapshot(league, players);
+  if (!snap || daysSince(snap.snapshotAt) >= SNAPSHOT_DAYS) writeSnapshot(league, players);
 }
 
 // ── ELO ───────────────────────────────────────────────────────────────────────
@@ -141,7 +153,7 @@ function calcElo(winnerRating, loserRating) {
 //   { longestWinStreak, longestLossStreak, currentStreak,
 //     highestRating, lowestRating, activeWinStreak, eloHistory }
 
-function computePlayerGameStats(playerId, playerGames, startingRating = 1000) {
+function computePlayerGameStats(playerId, playerGames, startingRating = INITIAL_RATING) {
   let longestWin = 0, longestLoss = 0, curWin = 0, curLoss = 0;
   let high = 0, low = Infinity;
   const eloHistory = [{ rating: startingRating, playedAt: null, label: 'Start' }];
@@ -193,7 +205,7 @@ function replayGames(basePlayers, games) {
       id:           p.id,
       name:         p.name,
       registeredAt: p.registeredAt,
-      rating:       typeof p.rating  === 'number' ? p.rating  : 1000,
+      rating:       typeof p.rating  === 'number' ? p.rating  : INITIAL_RATING,
       wins:         typeof p.wins    === 'number' ? p.wins    : 0,
       losses:       typeof p.losses  === 'number' ? p.losses  : 0,
     });
@@ -236,7 +248,7 @@ function coldLoad(league) {
     replaySubset = allGames.filter(g => g.playedAt > snap.snapshotAt);
   } else {
     const rawPlayers = readJsonl(playersPath(league));
-    basePlayers      = rawPlayers.map(p => ({ ...p, rating: 1000, wins: 0, losses: 0 }));
+    basePlayers      = rawPlayers.map(p => ({ ...p, rating: INITIAL_RATING, wins: 0, losses: 0 }));
     replaySubset     = allGames;
   }
 
@@ -288,13 +300,12 @@ const BADGE_DEFS = [
 
 // Walk the game history chronologically — the winner of the first game
 // becomes king; the title transfers whenever the current king loses.
+// Games are stored in append order (chronological) so no sort is needed.
 function computeKingOfTheHill(games) {
   if (!games.length) return null;
-  const sorted = [...games].sort((a, b) => a.playedAt.localeCompare(b.playedAt));
-  let kingId = sorted[0].winnerId;
-  for (let i = 1; i < sorted.length; i++) {
-    const g = sorted[i];
-    if (g.loserId === kingId) kingId = g.winnerId;
+  let kingId = games[0].winnerId;
+  for (let i = 1; i < games.length; i++) {
+    if (games[i].loserId === kingId) kingId = games[i].winnerId;
   }
   return kingId;
 }
@@ -327,16 +338,15 @@ function computeRecordMaps(players, games) {
     track('longestActiveWinStreak', stats.activeWinStreak,  p.id);
   }
 
-  // Defend the Hill
+  // Defend the Hill — games are already in chronological order in the cache
   {
-    const sorted = [...games].sort((a, b) => a.playedAt.localeCompare(b.playedAt));
     const defendBest = {};
-    if (sorted.length) {
-      let kingId = sorted[0].winnerId;
+    if (games.length) {
+      let kingId = games[0].winnerId;
       let curDefend = 1;
       defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
-      for (let i = 1; i < sorted.length; i++) {
-        const g = sorted[i];
+      for (let i = 1; i < games.length; i++) {
+        const g = games[i];
         if (g.winnerId === kingId) {
           curDefend++;
           defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
@@ -374,20 +384,24 @@ function computeBadges(player, playerGames, allPlayers, allGames, recHolders) {
   if (played >= 50)       earned.add('games_50');
   if (played >= 100)      earned.add('games_100');
 
-  // Beat the top-rated player
-  playerGames.forEach(g => {
-    if (g.winnerId !== player.id) return;
-    const allBefore = allGames
-      .filter(og => og.playedAt < g.playedAt)
-      .reduce((acc, og) => {
-        acc[og.winnerId] = og.winnerRatingAfter;
-        acc[og.loserId]  = og.loserRatingAfter;
-        return acc;
-      }, {});
-    allPlayers.forEach(p => { if (!(p.id in allBefore)) allBefore[p.id] = 1000; });
-    const maxRating = Math.max(...Object.values(allBefore));
-    if (g.loserRatingBefore >= maxRating) earned.add('beat_top');
-  });
+  // Beat the top-rated player — O(n) single forward pass.
+  // Build a running map of every player's rating as of each game,
+  // then check if the loser was the top-rated player at that moment.
+  {
+    const runningRatings = {};  // playerId → rating just before this game
+    allPlayers.forEach(p => { runningRatings[p.id] = INITIAL_RATING; });
+
+    for (const g of allGames) {
+      // snapshot ratings *before* this game is applied
+      const topRating = Math.max(...Object.values(runningRatings));
+      if (g.winnerId === player.id && runningRatings[g.loserId] >= topRating) {
+        earned.add('beat_top');
+      }
+      // advance running state
+      runningRatings[g.winnerId] = g.winnerRatingAfter;
+      runningRatings[g.loserId]  = g.loserRatingAfter;
+    }
+  }
 
   const holdsAny = Object.values(recHolders).some(s => s.has(player.id))
                 || computeBiggestUpsetHolder(allGames) === player.id;
@@ -398,6 +412,55 @@ function computeBadges(player, playerGames, allPlayers, allGames, recHolders) {
   if (computeKingOfTheHill(allGames) === player.id) earned.add('king_of_the_hill');
 
   return BADGE_DEFS.map(b => ({ ...b, earned: earned.has(b.id) }));
+}
+
+// ── Profile route helpers ─────────────────────────────────────────────────────
+
+/** Build the results history array (most-recent first) for a player's profile. */
+function computeProfileResults(player, playerGames, players) {
+  return [...playerGames].reverse().map(g => ({
+    result:       g.winnerId === player.id ? 'W' : 'L',
+    opponent:     playerName(players, g.winnerId === player.id ? g.loserId : g.winnerId),
+    ratingChange: g.winnerId === player.id ? +g.ratingChange : -g.ratingChange,
+    playedAt:     g.playedAt,
+  }));
+}
+
+/**
+ * Build head-to-head stats against every opponent, then derive rivals and nemeses.
+ * Returns { rivals, nemeses }.
+ *
+ * Rival   = opponent(s) most played against; ties → show all.
+ * Nemesis = opponent(s) who beat this player most; tie-break by fewest total games.
+ */
+function computeH2H(player, playerGames, players) {
+  const h2h = {};
+  for (const g of playerGames) {
+    const oppId = g.winnerId === player.id ? g.loserId : g.winnerId;
+    if (!h2h[oppId]) h2h[oppId] = { id: oppId, name: playerName(players, oppId), played: 0, wins: 0, losses: 0 };
+    h2h[oppId].played++;
+    if (g.winnerId === player.id) h2h[oppId].wins++;
+    else                          h2h[oppId].losses++;
+  }
+  const opponents = Object.values(h2h);
+
+  let rivals = [];
+  if (opponents.length) {
+    const maxPlayed = Math.max(...opponents.map(o => o.played));
+    rivals = opponents.filter(o => o.played === maxPlayed);
+  }
+
+  let nemeses = [];
+  if (opponents.length) {
+    const maxLosses = Math.max(...opponents.map(o => o.losses));
+    if (maxLosses > 0) {
+      const mostBeaten = opponents.filter(o => o.losses === maxLosses);
+      const minPlayed  = Math.min(...mostBeaten.map(o => o.played));
+      nemeses = mostBeaten.filter(o => o.played === minPlayed);
+    }
+  }
+
+  return { rivals, nemeses };
 }
 
 // ── Middleware ────────────────────────────────────────────────────────────────
@@ -476,7 +539,7 @@ app.post('/api/players', (req, res) => {
     id:           `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     name:         name.trim(),
     registeredAt: new Date().toISOString(),
-    rating:       1000,
+    rating:       INITIAL_RATING,
     wins:         0,
     losses:       0,
   };
@@ -501,55 +564,12 @@ app.get('/api/players/:id/profile', (req, res) => {
   if (!player) return res.status(404).json({ error: 'Player not found' });
 
   const playerGames = games.filter(g => g.winnerId === player.id || g.loserId === player.id);
-  const sorted      = [...players].sort((a, b) => b.rating - a.rating);
-  const position    = sorted.findIndex(p => p.id === player.id) + 1;
+  const position    = [...players].sort((a, b) => b.rating - a.rating).findIndex(p => p.id === player.id) + 1;
+  const total       = player.wins + player.losses;
 
-  // Single pass over playerGames for all derived stats
-  const stats = computePlayerGameStats(player.id, playerGames);
-
-  const allResults = [...playerGames].reverse().map(g => ({
-    result:       g.winnerId === player.id ? 'W' : 'L',
-    opponent:     (players.find(p => p.id === (g.winnerId === player.id ? g.loserId : g.winnerId)) || { name: 'Unknown' }).name,
-    ratingChange: g.winnerId === player.id ? +g.ratingChange : -g.ratingChange,
-    playedAt:     g.playedAt,
-  }));
-
-  const total = player.wins + player.losses;
-
-  // ── Rival & Nemesis ────────────────────────────────────────────────────────
-  // Build head-to-head stats against every opponent
-  const h2h = {}; // opponentId → { id, name, played, wins, losses }
-  for (const g of playerGames) {
-    const oppId   = g.winnerId === player.id ? g.loserId  : g.winnerId;
-    const oppName = (players.find(p => p.id === oppId) || { name: 'Unknown' }).name;
-    if (!h2h[oppId]) h2h[oppId] = { id: oppId, name: oppName, played: 0, wins: 0, losses: 0 };
-    h2h[oppId].played++;
-    if (g.winnerId === player.id) h2h[oppId].wins++;
-    else                          h2h[oppId].losses++;
-  }
-  const opponents = Object.values(h2h);
-
-  // Rival = opponent(s) most played against; ties → show all
-  let rivals = [];
-  if (opponents.length) {
-    const maxPlayed = Math.max(...opponents.map(o => o.played));
-    rivals = opponents.filter(o => o.played === maxPlayed);
-  }
-
-  // Nemesis = opponent(s) that have beaten this player most.
-  //   Tie-break 1: fewest games played together (more efficient tormentor).
-  //   Tie-break 2: if still equal after tie-break, show all.
-  let nemeses = [];
-  if (opponents.length) {
-    const maxLosses = Math.max(...opponents.map(o => o.losses));
-    if (maxLosses > 0) {
-      const mostBeaten = opponents.filter(o => o.losses === maxLosses);
-      const minPlayed  = Math.min(...mostBeaten.map(o => o.played));
-      nemeses = mostBeaten.filter(o => o.played === minPlayed);
-    }
-  }
-
-  // ── Records & badges — compute recHolders once, share with computeBadges ──
+  const stats   = computePlayerGameStats(player.id, playerGames);
+  const results = computeProfileResults(player, playerGames, players);
+  const { rivals, nemeses } = computeH2H(player, playerGames, players);
   const { recHolders } = computeRecordMaps(players, games);
 
   res.json({
@@ -557,7 +577,7 @@ app.get('/api/players/:id/profile', (req, res) => {
     position, totalPlayers: players.length,
     wins: player.wins, losses: player.losses, played: total,
     winPct: total ? Math.round((player.wins / total) * 100) : 0,
-    results: allResults,
+    results,
     longestWinStreak:  stats.longestWinStreak,
     longestLossStreak: stats.longestLossStreak,
     currentStreak:     stats.currentStreak,
@@ -596,31 +616,16 @@ app.get('/api/records', (req, res) => {
   }
 
   for (const player of players) {
-    const pg     = games.filter(g => g.winnerId === player.id || g.loserId === player.id);
+    const pg = games.filter(g => g.winnerId === player.id || g.loserId === player.id);
     if (pg.length === 0) continue;   // must have played at least one game to hold a record
 
-    const played = player.wins + player.losses;
+    addHolder(records.mostGamesPlayed, player.wins + player.losses, player);
+    addHolder(records.mostGamesWon,    player.wins,                 player);
 
-    addHolder(records.mostGamesPlayed, played,       player);
-    addHolder(records.mostGamesWon,    player.wins,  player);
-
-    let high = 0;
-    pg.forEach(g => {
-      const r = g.winnerId === player.id ? g.winnerRatingAfter : g.loserRatingAfter;
-      if (r > high) high = r;
-    });
-    addHolder(records.highestEloRating, high, player);
-
-    let cw = 0, bw = 0;
-    pg.forEach(g => {
-      if (g.winnerId === player.id) { cw++; if (cw > bw) bw = cw; }
-      else                          { cw = 0; }
-    });
-    addHolder(records.longestWinStreak, bw, player);
-
-    const lastGame     = pg[pg.length - 1];
-    const activeStreak = (lastGame && lastGame.winnerId === player.id) ? cw : 0;
-    addHolder(records.longestActiveWinStreak, activeStreak, player);
+    const stats = computePlayerGameStats(player.id, pg);
+    addHolder(records.highestEloRating,       stats.highestRating,    player);
+    addHolder(records.longestWinStreak,       stats.longestWinStreak,  player);
+    addHolder(records.longestActiveWinStreak, stats.activeWinStreak,   player);
   }
 
   // Defend the Hill
@@ -650,14 +655,12 @@ app.get('/api/records', (req, res) => {
   for (const g of games) {
     const diff = g.loserRatingBefore - g.winnerRatingBefore;
     if (diff > records.biggestUpset.ratingDiff) {
-      const winner = players.find(p => p.id === g.winnerId);
-      const loser  = players.find(p => p.id === g.loserId);
       records.biggestUpset = {
         ratingDiff: diff,
         winnerId:   g.winnerId,
-        winnerName: winner ? winner.name : 'Unknown',
+        winnerName: playerName(players, g.winnerId),
         loserId:    g.loserId,
-        loserName:  loser  ? loser.name  : 'Unknown',
+        loserName:  playerName(players, g.loserId),
       };
     }
   }
@@ -671,11 +674,11 @@ app.get('/api/games', (req, res) => {
   const league = resolveLeague(req, res);
   if (!league) return;
   const { players, games } = getCache(league);
-  const enriched = [...games].reverse().map(g => {
-    const winner = players.find(p => p.id === g.winnerId);
-    const loser  = players.find(p => p.id === g.loserId);
-    return { ...g, winnerName: winner ? winner.name : 'Unknown', loserName: loser ? loser.name : 'Unknown' };
-  });
+  const enriched = [...games].reverse().map(g => ({
+    ...g,
+    winnerName: playerName(players, g.winnerId),
+    loserName:  playerName(players, g.loserId),
+  }));
   res.json(enriched);
 });
 
@@ -752,7 +755,7 @@ app.delete('/api/games/:id', (req, res) => {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB max
+  limits: { fileSize: AVATAR_MAX_BYTES },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
     else cb(new Error('Only image files are allowed'));
@@ -768,7 +771,7 @@ app.get('/api/players/:id/avatar', (req, res) => {
 
   if (fs.existsSync(file)) {
     res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cache-Control', `public, max-age=${AVATAR_CACHE_SECS}`);
     return fs.createReadStream(file).pipe(res);
   }
 
