@@ -3,11 +3,6 @@
  * index.html has its own inline implementation that also handles joinLeague().
  */
 
-function esc(str) {
-  return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 async function renderAuthNav() {
   const nav = document.getElementById('auth-nav');

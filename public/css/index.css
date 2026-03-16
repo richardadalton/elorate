@@ -143,6 +143,30 @@ nav {
 }
 .league-pill.add-league { color: var(--accent); }
 .league-pill.add-league:hover { background: var(--surface2); }
+.league-pill.add-league-highlight {
+  border-color: var(--accent);
+  background: var(--surface2);
+  box-shadow: 0 0 0 2px var(--accent);
+  animation: pulse-highlight 1.5s ease-in-out infinite;
+}
+@keyframes pulse-highlight {
+  0%, 100% { box-shadow: 0 0 0 2px var(--accent); }
+  50%       { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 40%, transparent); }
+}
+
+#no-leagues-card {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.no-leagues-msg {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.empty-link { color: var(--accent); text-decoration: underline; }
+.empty-link:hover { opacity: 0.8; }
 
 .new-league-form {
   display: flex;

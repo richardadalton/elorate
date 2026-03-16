@@ -1365,3 +1365,95 @@ All routes accept a `?league=` query parameter (defaults to `pool`).
 | `GET` | `/api/records?league=pool` | Get all-time records |
 | `POST` | `/api/admin/snapshot?league=pool` | Force a snapshot of derived state |
 
+---
+
+### 37. Shared Frontend Helpers — `public/js/shared.js`
+
+#### Problem
+
+Five frontend JS files (`index.js`, `player.js`, `records.js`, `user.js`, `auth.js`) each contained their own copy of the same utility functions:
+
+- `esc(str)` — XSS-safe HTML escaping
+- `formatLeagueName(slug)` — converts `pool_league` → `Pool League`
+- `ordinal(n)` — `1` → `1st`, `2` → `2nd`, etc.
+- `fmtDate(iso)` — short date+time, e.g. `14 Mar 09:45`
+- `formatDate(iso)` — long date, e.g. `14 March 2026`
+- `api(method, path, body)` — minimal fetch wrapper
+
+Any bug fix or change to one of these needed to be applied in up to five places.
+
+#### Solution
+
+Created `public/js/shared.js` containing all six helpers. Removed the duplicate definitions from all five files. Added `<script src="/js/shared.js">` as the first script tag in each of the four HTML pages (`index.html`, `player.html`, `records.html`, `user.html`) so it is loaded before any page-specific script.
+
+No ES modules or build step was needed — a plain `<script>` tag before each page script is sufficient. The functions are available globally on the page as before.
+
+#### No behaviour changes
+
+All 194 tests pass unchanged.
+
+---
+
+### 38. Static Product Name — "Elorate"
+
+#### Change
+
+The `<h1>` in `index.html` previously contained a dynamic `<span id="league-title">` that was updated by JavaScript whenever the active league changed. This meant the app had no stable identity — the browser tab and page heading just showed whichever league was currently selected.
+
+#### Fix
+
+- Replaced the dynamic `<h1>🎱 <span id="league-title">Pool</span></h1>` with a static `<h1>🎱 Elorate</h1>`.
+- Removed the two JS calls to `document.getElementById('league-title').textContent` (in `setLeague` and `loadLeagueSwitcher`).
+- The active league name continues to appear in the **league table card heading** (`🏆 [League] League Table`) which is the more appropriate place for it.
+
+#### Tests updated
+
+- `home.spec.js` — added a test asserting `<h1>` contains `"Elorate"`.
+- The broken `can create a new league from the UI` test (which was asserting `#league-title` no longer existed) was updated to assert the new league's pill becomes `.active` in the switcher instead.
+
+---
+
+### 39. No-Leagues Empty State
+
+#### Problem
+
+When the app had no leagues (e.g. a brand-new install, or after all data is wiped), the home page showed the league table and recent games cards with spinners that never resolved. There was no message to tell the user what to do next.
+
+#### Behaviour
+
+Two contextual messages replace the league table and recent games cards when no leagues exist:
+
+| State | Message |
+|---|---|
+| Logged out | *"There are no leagues at the moment. Register to create your first league."* — "Register" links to `/register.html` |
+| Logged in | *"There are no leagues at the moment. Create your first league."* — "Create your first league" opens the new league form inline; the **＋ New** button pulses with a CSS animation |
+
+#### Implementation
+
+- **`loadLeagueSwitcher`** — when the `/api/leagues` response is empty, calls `renderNoLeagues()` and returns early instead of trying to set a league title or render pills.
+- **`renderNoLeagues()`** — hides `#league-card`, `#history-card`, `#record-card`, `#add-player-card`, and `#join-banner`; shows a new `#no-leagues-card` with the contextual message; renders just the **＋ New** pill (logged in) or nothing (logged out); applies `add-league-highlight` CSS class to pulse-animate the button.
+- **`showLeagueCards()`** — new helper that reverses `renderNoLeagues()`: hides `#no-leagues-card`, restores `#league-card` and `#history-card`, and re-shows the action cards for logged-in users.
+- **`setLeague()`** — now calls `showLeagueCards()` before `refresh()` so creating the first league immediately switches to the normal layout without a page reload.
+- **`joinLeague()`** — also calls `showLeagueCards()` before `refresh()` so clicking Join League correctly reveals the table and history.
+- **`updateJoinBanner()`** — now guards against the no-leagues state so the "You're not in this league" banner is never shown when there are no leagues.
+- **`logout()`** — now calls `renderLeagueSwitcher(window._leagues || [])` so the **＋ New** button disappears immediately on sign-out without a page reload.
+- **`refresh()`** — bails early when `_leagues` is empty to avoid API calls against an undefined league slug.
+
+#### CSS additions (`index.css`)
+
+- `#no-leagues-card` — full-width (`grid-column: 1 / -1`), centred, padded message card.
+- `.no-leagues-msg` — muted text style.
+- `.empty-link` — accent-coloured underlined link for inline call-to-action text.
+- `.add-league-highlight` + `@keyframes pulse-highlight` — pulsing green glow on the **＋ New** button.
+
+#### Tests added (3 new — `home.spec.js`)
+
+| Test | What it verifies |
+|---|---|
+| `#no-leagues-card` is hidden when leagues exist | Normal state unaffected |
+| `#league-card` and `#history-card` are visible when leagues exist | Normal state unaffected |
+| `<h1>` contains "Elorate" | Static product name correct |
+
+**Total tests: 191 → 194.**
+
+

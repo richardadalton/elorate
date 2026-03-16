@@ -1,4 +1,4 @@
-# 🎱 League Tracker
+# 🎱 Elorate — League Tracker
 
 ---
 
@@ -162,9 +162,12 @@ League data is stored in the `./data/` directory on your machine (mounted into t
 
 - A default **Pool** league is created automatically on first run (`data/pool/`)
 - Use the **league switcher** in the header to switch between leagues
-- Click **＋ New** to create a new league — this creates a new data directory automatically
+- Click **＋ New** to create a new league — this creates a new data directory automatically (only visible when signed in)
 - The active league is remembered in `localStorage` per browser
 - Any page can be deep-linked to a specific league by appending `?league=<slug>` to the URL (e.g. `/?league=chess`, `/records.html?league=backgammon`) — the page will load that league and update `localStorage` accordingly
+- **Empty state** — if there are no leagues, the league table and recent games cards are hidden and replaced with a contextual message:
+  - **Logged out:** *"There are no leagues at the moment. Register to create your first league."*
+  - **Logged in:** *"There are no leagues at the moment. Create your first league."* — the **＋ New** button is highlighted with a pulsing animation
 
 ---
 
@@ -207,6 +210,7 @@ pool_league/
     │   ├── user.css       # User profile page styles
     │   └── records.css
     └── js/
+        ├── shared.js      # Shared helpers (esc, formatLeagueName, ordinal, fmtDate, formatDate, api)
         ├── auth.js        # Shared auth nav (used by player.html, records.html, user.html)
         ├── index.js       # Frontend logic for main page
         ├── player.js      # Frontend logic for player profile
@@ -238,12 +242,12 @@ npm run test:ui
 npm run test:report
 ```
 
-### What's covered (191 tests)
+### What's covered (194 tests)
 
 | Suite | Tests | Covers |
 |-------|-------|--------|
 | `api.spec.js` | 108 | Leagues, Players (incl. currentStreak), Games, Delete Game, Profile (incl. rivals, nemeses, tie-breaking), Records (incl. no-games eligibility), ELO maths, King of the Hill, Badges (incl. dynamic Record Holder, upset winner eligibility), Form guide, Biggest Upset, Active Streak, Avatars, Snapshot safety, Auth, Join League & Claim Player, User-scoped Avatar, **User Profile** |
-| `home.spec.js` | 34 | League table (incl. avatar column, streak column), Form guide, Add player, Record game, Game history, Delete game UI, League switcher |
+| `home.spec.js` | 37 | League table (incl. avatar column, streak column), Form guide, Add player, Record game, Game history, Delete game UI, League switcher, **No-leagues empty state**, **Static product name** |
 | `player.spec.js` | 29 | Hero section (incl. avatar), Stats grid, Badges, Streaks, Results history, Rival & Nemesis cards, Claim Player, 404 |
 | `records.spec.js` | 20 | Layout, All 7 record cards, Holder links, Biggest Upset, Active Streak, Empty state |
 

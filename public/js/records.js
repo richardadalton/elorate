@@ -1,12 +1,3 @@
-function esc(str) {
-  return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function formatLeagueName(slug) {
-  return slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
 
 async function load() {
   const params = new URLSearchParams(window.location.search);

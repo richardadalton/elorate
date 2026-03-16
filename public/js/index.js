@@ -9,16 +9,25 @@ function setLeague(league) {
   currentLeague = league;
   localStorage.setItem('currentLeague', league);
   const name = formatLeagueName(league);
-  document.getElementById('league-title').textContent = name;
   document.getElementById('league-table-title').textContent = name;
+  showLeagueCards();
   renderLeagueSwitcher(window._leagues || []);
   updateJoinBanner();
   refresh();
 }
 
-function formatLeagueName(slug) {
-  return slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+// Reverse renderNoLeagues — restore normal card visibility
+function showLeagueCards() {
+  document.getElementById('no-leagues-card').style.display = 'none';
+  document.getElementById('league-card').style.display     = '';
+  document.getElementById('history-card').style.display    = '';
+  // action cards are controlled by renderAuthNav (shown only when logged in)
+  if (currentUser) {
+    document.getElementById('record-card').style.display     = '';
+    document.getElementById('add-player-card').style.display = '';
+  }
 }
+
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -29,47 +38,55 @@ function setMsg(id, text, isErr) {
   if (text) setTimeout(() => { el.textContent = ''; el.className = 'msg'; }, 3500);
 }
 
-function fmtDate(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-    + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-}
-
-// ── Fetch wrappers ────────────────────────────────────────────────────────────
-
-async function api(method, path, body) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const r = await fetch(path, opts);
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error || 'Request failed');
-  return data;
-}
-
-// ── XSS safety ───────────────────────────────────────────────────────────────
-
-function esc(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 // ── League Switcher ───────────────────────────────────────────────────────────
 
 async function loadLeagueSwitcher() {
   const leagues = await api('GET', '/api/leagues');
   window._leagues = leagues;
+
+  if (!leagues.length) {
+    renderNoLeagues();
+    return;
+  }
+
   // If saved league no longer exists, fall back to first available
   if (!leagues.includes(currentLeague)) {
     currentLeague = leagues[0] || 'pool';
     localStorage.setItem('currentLeague', currentLeague);
   }
   const name = formatLeagueName(currentLeague);
-  document.getElementById('league-title').textContent = name;
   document.getElementById('league-table-title').textContent = name;
+  showLeagueCards();
   renderLeagueSwitcher(leagues);
+}
+
+function renderNoLeagues() {
+  const tableMsg = currentUser
+    ? `There are no leagues at the moment. <a class="empty-link" href="#" onclick="event.preventDefault();toggleNewLeagueForm()">Create your first league</a>.`
+    : `There are no leagues at the moment. <a class="empty-link" href="/register.html">Register</a> to create your first league.`;
+
+  // Hide the league table and history cards
+  document.getElementById('league-card').style.display   = 'none';
+  document.getElementById('history-card').style.display  = 'none';
+
+  // Show the message card
+  document.getElementById('no-leagues-card').style.display = '';
+  document.getElementById('no-leagues-msg').innerHTML = tableMsg;
+
+  // Hide action cards and join banner — no league to act in yet
+  document.getElementById('record-card').style.display     = 'none';
+  document.getElementById('add-player-card').style.display = 'none';
+  document.getElementById('join-banner').style.display     = 'none';
+
+  // Render just the ＋ New button (logged-in users) or nothing
+  renderLeagueSwitcher([]);
+
+  // Highlight the ＋ New button if the user is logged in
+  if (currentUser) {
+    const addBtn = document.querySelector('.league-pill.add-league');
+    if (addBtn) addBtn.classList.add('add-league-highlight');
+  }
 }
 
 function renderLeagueSwitcher(leagues) {
@@ -246,6 +263,7 @@ function populateSelects(players) {
 
 async function refresh() {
   try {
+    if (!window._leagues || !window._leagues.length) return;
     const players = await loadLeague();
     populateSelects(players);
     await loadHistory();
@@ -311,14 +329,12 @@ function renderAuthNav(user) {
       <a class="btn btn-sm btn-ghost" href="/login.html">Sign In</a>
       <a class="btn btn-sm" href="/register.html">Register</a>`;
   }
-  const show = user ? '' : 'none';
-  document.getElementById('record-card').style.display     = show;
-  document.getElementById('add-player-card').style.display = show;
 }
 
 function updateJoinBanner() {
   const banner = document.getElementById('join-banner');
   if (!currentUser) { banner.style.display = 'none'; return; }
+  if (!window._leagues || !window._leagues.length) { banner.style.display = 'none'; return; }
   const alreadyJoined = memberships[currentLeague];
   banner.style.display = alreadyJoined ? 'none' : 'flex';
 }
@@ -329,6 +345,7 @@ async function joinLeague() {
   try {
     await api('POST', `/api/leagues/${currentLeague}/join`, {});
     memberships = await api('GET', '/api/auth/memberships');
+    showLeagueCards();
     updateJoinBanner();
     await refresh();
   } catch (e) {
@@ -344,6 +361,9 @@ async function logout() {
   memberships = {};
   renderAuthNav(null);
   updateJoinBanner();
+  renderLeagueSwitcher(window._leagues || []);
+  document.getElementById('record-card').style.display     = 'none';
+  document.getElementById('add-player-card').style.display = 'none';
 }
 
 async function loadAuthState() {

@@ -11,7 +11,7 @@
 
 <header>
   <div class="header-top">
-    <h1>🎱 <span id="league-title">Pool</span></h1>
+    <h1>🎱 Elorate</h1>
     <div class="auth-nav" id="auth-nav">
       <!-- populated by JS -->
     </div>
@@ -35,8 +35,13 @@
     <div class="msg" id="join-msg"></div>
   </div>
 
+  <!-- No leagues message (shown when there are no leagues) -->
+  <div class="card" id="no-leagues-card" style="display:none">
+    <p id="no-leagues-msg" class="no-leagues-msg"></p>
+  </div>
+
   <!-- League Table -->
-  <div class="card" id="league-card">
+  <div class="card" id="league-card" style="display:none">
     <div class="league-card-header">
       <h2><span class="icon">🏆</span> <span id="league-table-title">Pool</span> League Table</h2>
       <a class="nav-link" href="/records.html">🏅 Records</a>
@@ -47,7 +52,7 @@
   </div>
 
   <!-- Record a Game -->
-  <div class="card" id="record-card">
+  <div class="card" id="record-card" style="display:none">
     <h2><span class="icon">🎯</span> Record a Game</h2>
     <div class="form-row">
       <select id="winner-select">
@@ -64,7 +69,7 @@
   </div>
 
   <!-- Add Player (admin / guest convenience) -->
-  <div class="card" id="add-player-card">
+  <div class="card" id="add-player-card" style="display:none">
     <h2><span class="icon">➕</span> Add Guest Player</h2>
     <p class="card-hint">Add a one-off player who doesn't have an account.</p>
     <div class="form-row">
@@ -76,7 +81,7 @@
   </div>
 
   <!-- Game History -->
-  <div class="card" id="history-card">
+  <div class="card" id="history-card" style="display:none">
     <h2><span class="icon">📋</span> Recent Games</h2>
     <div class="history-list" id="history-list">
       <div class="empty-state"><span class="spinner"></span></div>
@@ -85,6 +90,7 @@
 
 </div>
 
+<script src="/js/shared.js"></script>
 <script src="/js/index.js"></script>
 </body>
 </html>

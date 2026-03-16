@@ -1,19 +1,3 @@
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function esc(str) {
-  return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function formatLeagueName(slug) {
-  return slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
-
-function ordinal(n) {
-  const s = ['th','st','nd','rd'], v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
-}
 
 // ── Load & render ─────────────────────────────────────────────────────────────
 
