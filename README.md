@@ -1,7 +1,5 @@
 # 🎱 Elorate — League Tracker
 
-![Deploy](https://github.com/richarddalton/pool_league/actions/workflows/deploy.yml/badge.svg)
-
 ---
 
 ## About This Project
