@@ -70,7 +70,8 @@ async function registerAndLogin(request, suffix = '') {
     headers: { 'Content-Type': 'application/json' },
   });
   if (!res.ok()) throw new Error(`Failed to register: ${await res.text()}`);
-  return { email, password, name };
+  const body = await res.json();
+  return { email, password, name, id: body.id };
 }
 
 module.exports = { BASE, createTestLeague, addPlayer, recordGame, registerAndLogin };

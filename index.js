@@ -684,6 +684,15 @@ app.post('/api/leagues/:league/join', (req, res) => {
     return res.status(400).json({ error: 'You are already in this league' });
   }
 
+  // Auto-claim an unclaimed guest with the same name rather than creating a duplicate
+  const nameLower   = user.name.trim().toLowerCase();
+  const guestPlayer = players.find(p => !p.userId && p.name.trim().toLowerCase() === nameLower);
+  if (guestPlayer) {
+    guestPlayer.userId = user.id;
+    appendJsonl(playersPath(league), { _claim: true, id: guestPlayer.id, userId: user.id, claimedAt: new Date().toISOString() });
+    return res.status(200).json({ ...guestPlayer, autoClaimed: true });
+  }
+
   const player = {
     id:            `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     name:          user.name,
@@ -746,13 +755,26 @@ app.post('/api/players', (req, res) => {
   if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
 
   const { players } = getCache(league);
-  const duplicate = players.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
+  const trimmed   = name.trim();
+  const nameLower = trimmed.toLowerCase();
+
+  // Reject if a player (guest or linked) with this name already exists
+  const duplicate = players.find(p => p.name.toLowerCase() === nameLower);
   if (duplicate) return res.status(400).json({ error: 'Player already exists' });
+
+  // If a registered user account has this display name, auto-link the player to them
+  const matchingUser = readUsers().find(u => u.name.trim().toLowerCase() === nameLower);
+  const linkedUserId = matchingUser ? matchingUser.id : null;
+
+  // Check the matched user isn't already a player in this league
+  if (linkedUserId && players.find(p => p.userId === linkedUserId)) {
+    return res.status(400).json({ error: 'Player already exists' });
+  }
 
   const player = {
     id:            `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    name:          name.trim(),
-    userId:        null,
+    name:          trimmed,
+    userId:        linkedUserId,
     registeredAt:  new Date().toISOString(),
     rating:        INITIAL_RATING,
     wins:          0,
@@ -1062,6 +1084,7 @@ app.get('/api/users/:id/avatar', (req, res) => {
   res.send(svg);
 });
 
+
 // ── Avatar routes ─────────────────────────────────────────────────────────────
 
 const upload = multer({
@@ -1136,6 +1159,29 @@ app.post('/api/players/:id/avatar', upload.single('avatar'), async (req, res) =>
     res.json({ avatarUrl: `/api/players/${id}/avatar?league=${league}&v=${Date.now()}` });
   } catch (e) {
     console.error('Avatar upload error:', e);
+    res.status(500).json({ error: 'Failed to process image' });
+  }
+});
+
+// POST /api/users/:id/avatar — upload, resize to 200×200, save as JPEG (own profile only)
+app.post('/api/users/:id/avatar', upload.single('avatar'), async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
+  if (req.session.userId !== req.params.id) return res.status(403).json({ error: 'Forbidden' });
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  try {
+    const dir = userAvatarsDir();
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const savePath = userAvatarPath(req.params.id);
+
+    await sharp(req.file.buffer)
+      .resize(200, 200, { fit: 'cover', position: 'centre' })
+      .jpeg({ quality: 85 })
+      .toFile(savePath);
+
+    res.json({ avatarUrl: `/api/users/${req.params.id}/avatar?v=${Date.now()}` });
+  } catch (e) {
+    console.error('User avatar upload error:', e);
     res.status(500).json({ error: 'Failed to process image' });
   }
 });

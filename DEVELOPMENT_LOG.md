@@ -1456,4 +1456,86 @@ Two contextual messages replace the league table and recent games cards when no 
 
 **Total tests: 191 → 194.**
 
+---
+
+### 40. User Profile — Avatar Upload
+
+#### Problem
+On the player profile page, clicking the avatar opens a file picker and uploads a new photo. The user profile page showed the same avatar but had no way to change it.
+
+#### Solution
+- **`POST /api/users/:id/avatar`** — new route added after the `upload` multer instance (fixing an earlier `ReferenceError: Cannot access 'upload' before initialization`). Requires a valid session (`401`), only allows uploading to your own profile (`403` if the session user ID doesn't match). Same sharp pipeline as the player route — resizes to 200×200 JPEG, saves to `data/avatars/<userId>.jpg`.
+- **`user.js`** — `load()` now fetches `/api/auth/me` in parallel with the user profile to determine `isOwner`. `renderProfile(user, isOwner)` wraps the avatar in a `<label>` with a hidden `<input type="file">` and a 📷 overlay when `isOwner`; renders a plain `<div>` otherwise.
+- **`user.css`** — added upload interaction styles matching the player page: `cursor: pointer` on `label.user-avatar-wrap`, hover overlay, hidden file input, `.uploading` state.
+
+---
+
+### 41. Duplicate Player Name — Collision Prevention
+
+#### Problem
+Three scenarios could produce two league participants with the same display name:
+
+1. A guest is added with the same name as a registered user. Later that user joins the league directly, creating a second entry.
+2. A user joins a league where an unclaimed guest with their name already exists, creating a duplicate alongside the unclaimed entry.
+3. A guest is added with a name matching an existing user even though that user is already in the league.
+
+#### Solutions
+
+**`POST /api/players` (add guest) — auto-link to matching user account**
+- Before creating the guest, looks up all user accounts for a case-insensitive name match.
+- If a match is found and that user is not already in the league, `userId` is set to the matched user's ID — the player is created as a linked entry, not a true guest.
+- If the matched user is already in the league (they already have a player entry), the request is rejected with `400 Player already exists`.
+- The `userId` is written to `players.jsonl` so the link survives restarts.
+
+**`POST /api/leagues/:league/join` — auto-claim matching guest**
+- Before creating a new player, checks for an unclaimed guest with the same name (case-insensitive).
+- If found, appends a `_claim` tombstone to `players.jsonl` (same as the manual claim flow), updates the in-memory `userId`, and returns the existing player with `autoClaimed: true`.
+- The user gets linked to their existing game history and ratings rather than starting fresh with a duplicate entry.
+- Only if no matching unclaimed guest exists is a new player created.
+
+#### Tests added (4 new — `api.spec.js`, `Join League & Claim Player` block)
+
+| Test | What it verifies |
+|---|---|
+| Adding guest with same name as registered user auto-links to that user | `userId` on response matches the user's id |
+| Adding guest with same name does not create duplicate if user already in league | Returns `400` |
+| Joining a league auto-claims a guest with the same name | Returns existing player id, `autoClaimed: true`, only 1 player in league |
+| (existing) `registerAndLogin` helper now returns `id` | Needed for `userId` assertion above |
+
+---
+
+### 42. Join Banner — Moved Inside League Table Card
+
+#### Problem
+The "You're not in this league yet." banner was a standalone grid item. Because the home page uses a two-column grid and the banner had no `grid-column: 1 / -1` rule, it only occupied one column — half the width of the league table and history cards below it.
+
+#### Solution
+Moved the banner inside `#league-card`, between the card heading and the table wrap. It now naturally inherits the full width of the card and is visually adjacent to the table it refers to.
+
+- **`index.html`** — removed the top-level `#join-banner` div; added it as a child of `#league-card`.
+- **`index.css`** — restyled `.join-banner` as a self-contained inline strip: its own border, rounded corners (`calc(var(--radius) - 4px)`), green-tinted background, and `margin-bottom: 16px` to space it from the table.
+- No JS changes — `#join-banner`, `#join-btn`, and `#join-msg` keep their same IDs.
+
+---
+
+### 43. Join Banner Not Shown for Newly Registered Users
+
+#### Bug
+After registering and being redirected to `/`, a newly signed-in user did not see the "You're not in this league yet." banner until they refreshed the page or switched leagues.
+
+#### Root cause
+The boot sequence on the home page is:
+
+```
+loadAuthState() → sets currentUser + memberships → updateJoinBanner()
+  .then(loadLeagueSwitcher) → sets window._leagues
+    .then(refresh)
+```
+
+`updateJoinBanner()` ran inside `loadAuthState()`, which completed *before* `loadLeagueSwitcher()` set `window._leagues`. The guard `if (!window._leagues || !window._leagues.length)` returned early because `_leagues` was still `undefined` — so the banner was hidden and never re-evaluated.
+
+#### Fix
+Added a second call to `updateJoinBanner()` at the end of `loadLeagueSwitcher()`, after `_leagues` is populated and `showLeagueCards()` has made the cards visible. At that point both `currentUser` (from auth) and `_leagues` (from the switcher) are reliably set, so the banner correctly appears on first load for any signed-in user who isn't yet a member of the active league.
+
+
 

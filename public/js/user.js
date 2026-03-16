@@ -1,4 +1,3 @@
-
 // ── Load & render ─────────────────────────────────────────────────────────────
 
 async function load() {
@@ -6,10 +5,14 @@ async function load() {
   const id = params.get('id');
   if (!id) { render404(); return; }
   try {
-    const r = await fetch('/api/users/' + id + '/profile');
-    if (!r.ok) { render404(); return; }
-    const user = await r.json();
-    renderProfile(user);
+    const [profileRes, meRes] = await Promise.all([
+      fetch('/api/users/' + id + '/profile'),
+      fetch('/api/auth/me'),
+    ]);
+    if (!profileRes.ok) { render404(); return; }
+    const user    = await profileRes.json();
+    const isOwner = meRes.ok && (await meRes.json()).id === id;
+    renderProfile(user, isOwner);
   } catch (e) {
     document.getElementById('root').innerHTML = '<div class="center">Failed to load profile.</div>';
   }
@@ -19,18 +22,26 @@ function render404() {
   document.getElementById('root').innerHTML = '<div class="center">User not found.</div>';
 }
 
-function renderProfile(user) {
-  document.title = user.name + ' \u2014 Pool League';
+function renderProfile(user, isOwner) {
+  document.title = user.name + ' \u2014 Elorate';
   const avatarUrl = '/api/users/' + esc(user.id) + '/avatar';
   const leaguesHtml = user.leagues.length
     ? user.leagues.map(l => renderLeagueCard(l)).join('')
     : '<div class="no-leagues">Not a member of any league yet.</div>';
 
+  const avatarHtml = isOwner
+    ? `<label class="user-avatar-wrap" title="Click to upload photo">
+        <img class="user-avatar" src="${avatarUrl}" alt="${esc(user.name)}" />
+        <div class="avatar-overlay">📷</div>
+        <input type="file" accept="image/*" class="avatar-file-input" data-id="${esc(user.id)}" />
+       </label>`
+    : `<div class="user-avatar-wrap">
+        <img class="user-avatar" src="${avatarUrl}" alt="${esc(user.name)}" />
+       </div>`;
+
   document.getElementById('root').innerHTML = `
     <div class="user-hero">
-      <div class="user-avatar-wrap">
-        <img class="user-avatar" src="${avatarUrl}" alt="${esc(user.name)}" />
-      </div>
+      ${avatarHtml}
       <div class="user-info">
         <div class="user-name">${esc(user.name)}</div>
         <div class="user-joined">Member since ${formatDate(user.createdAt)}</div>
@@ -41,6 +52,31 @@ function renderProfile(user) {
       <h2 class="section-title">Leagues</h2>
       <div class="leagues-list">${leaguesHtml}</div>
     </div>`;
+
+  // Wire up avatar upload (only rendered when isOwner)
+  const fileInput = document.querySelector('.avatar-file-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', async function () {
+      if (!this.files[0]) return;
+      const formData = new FormData();
+      formData.append('avatar', this.files[0]);
+      const wrap = document.querySelector('.user-avatar-wrap');
+      wrap.classList.add('uploading');
+      try {
+        const r = await fetch(`/api/users/${this.dataset.id}/avatar`, {
+          method: 'POST', body: formData,
+        });
+        if (!r.ok) throw new Error((await r.json()).error || 'Upload failed');
+        const { avatarUrl: newUrl } = await r.json();
+        document.querySelector('.user-avatar').src = newUrl;
+      } catch (e) {
+        alert('Upload failed: ' + e.message);
+      } finally {
+        wrap.classList.remove('uploading');
+        this.value = '';
+      }
+    });
+  }
 }
 
 function renderLeagueCard(l) {

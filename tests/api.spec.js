@@ -1193,6 +1193,52 @@ test.describe('Join League & Claim Player', () => {
     const body = await res.json();
     expect(body.claimable).toBe(false);
   });
+
+  test('adding guest with same name as registered user auto-links to that user', async ({ request }) => {
+    const creds  = await registerAndLogin(request, '_autolink');
+    const league2 = await createTestLeague(request, '_autolink');
+    // Add a guest whose name exactly matches the registered user
+    const res = await request.post(`${BASE}/api/players?league=${league2}`, {
+      data: { name: creds.name },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(res.status()).toBe(201);
+    const body = await res.json();
+    expect(body.userId).toBe(creds.id);
+  });
+
+  test('adding guest with same name as registered user does not create duplicate if user already in league', async ({ request }) => {
+    const creds   = await registerAndLogin(request, '_nodupautolink');
+    const league2  = await createTestLeague(request, '_nodupautolink');
+    // User joins the league first
+    await request.post(`${BASE}/api/leagues/${league2}/join`, {
+      data: {}, headers: { 'Content-Type': 'application/json' },
+    });
+    // Trying to add a guest with their name should now be rejected (already a player)
+    const res = await request.post(`${BASE}/api/players?league=${league2}`, {
+      data: { name: creds.name },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test('joining a league auto-claims a guest with the same name', async ({ request }) => {
+    const creds   = await registerAndLogin(request, '_autoclaimjoin');
+    const league2  = await createTestLeague(request, '_autoclaimjoin');
+    // Add a guest with the same name as the user (but not yet linked)
+    const guest = await addPlayer(request, league2, creds.name);
+    // User joins — should auto-claim the guest rather than create a duplicate
+    const res = await request.post(`${BASE}/api/leagues/${league2}/join`, {
+      data: {}, headers: { 'Content-Type': 'application/json' },
+    });
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBe(guest.id);          // same player record, not a new one
+    expect(body.autoClaimed).toBe(true);
+    // Only one player in the league
+    const { players } = await (await request.get(`${BASE}/api/players?league=${league2}`)).json();
+    expect(players.length).toBe(1);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

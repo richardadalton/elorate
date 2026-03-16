@@ -59,6 +59,7 @@ async function loadLeagueSwitcher() {
   document.getElementById('league-table-title').textContent = name;
   showLeagueCards();
   renderLeagueSwitcher(leagues);
+  updateJoinBanner();
 }
 
 function renderNoLeagues() {

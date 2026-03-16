@@ -41,14 +41,17 @@ header {
   color: var(--accent);
 }
 
-/* Join League banner */
+/* Join League banner — sits inside the league table card */
 .join-banner {
   display: none;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
   background: linear-gradient(135deg, rgba(74,222,128,0.08), rgba(22,163,74,0.05));
-  border-color: var(--accent2);
+  border: 1px solid var(--accent2);
+  border-radius: calc(var(--radius) - 4px);
+  padding: 12px 16px;
+  margin-bottom: 16px;
 }
 
 .join-text {

@@ -33,7 +33,8 @@ A focused, production-ready web application with a thoughtful architecture can b
 - **User accounts** — register and sign in to join leagues, record games, and claim your player profile. Guest players (added without an account) can be claimed later by signing in and clicking "This is me" on their profile page.
 - **User profile page** — clicking your username in the top-right nav opens your personal profile page showing your avatar, display name, sign-up date, and a card for every league you're in. Each league card shows your ranking, ELO rating, W/L record, win%, current streak, form guide, and earned badges. Clicking a league card navigates directly to that league.
 - **Multiple leagues** — each league has its own separate data file; switch between leagues from the home page. Signed-in users can create new leagues via the **＋ New** button.
-- **Join a league** — signed-in users who aren't yet in a league see a **Join League** banner and can join with one click, automatically creating their player entry.
+- **Join a league** — signed-in users who aren't yet in a league see a **Join League** banner (inside the league table card) and can join with one click, automatically creating their player entry. If an unclaimed guest with the same display name already exists, the join auto-claims them instead of creating a duplicate.
+- **Guest player name collision prevention** — adding a guest whose display name matches a registered user account automatically links the player to that account. If that user is already in the league the request is rejected.
 - **ELO rating system** — ratings update automatically after every game
 - **League table** — players ranked by current ELO rating, with 👑 crown marking the King of the Hill, **player avatars**, and a **form guide** showing the last 5 results as green/red squares
 - **Player profiles** — detailed stats per player including:
@@ -242,12 +243,12 @@ npm run test:ui
 npm run test:report
 ```
 
-### What's covered (194 tests)
+### What's covered (198 tests)
 
 | Suite | Tests | Covers |
 |-------|-------|--------|
-| `api.spec.js` | 108 | Leagues, Players (incl. currentStreak), Games, Delete Game, Profile (incl. rivals, nemeses, tie-breaking), Records (incl. no-games eligibility), ELO maths, King of the Hill, Badges (incl. dynamic Record Holder, upset winner eligibility), Form guide, Biggest Upset, Active Streak, Avatars, Snapshot safety, Auth, Join League & Claim Player, User-scoped Avatar, **User Profile** |
-| `home.spec.js` | 37 | League table (incl. avatar column, streak column), Form guide, Add player, Record game, Game history, Delete game UI, League switcher, **No-leagues empty state**, **Static product name** |
+| `api.spec.js` | 112 | Leagues, Players (incl. currentStreak, auto-link on guest add), Games, Delete Game, Profile (incl. rivals, nemeses, tie-breaking), Records (incl. no-games eligibility), ELO maths, King of the Hill, Badges (incl. dynamic Record Holder, upset winner eligibility), Form guide, Biggest Upset, Active Streak, Avatars, Snapshot safety, Auth, Join League & Claim Player (**incl. auto-claim on join, collision prevention**), User-scoped Avatar, **User Profile** |
+| `home.spec.js` | 37 | League table (incl. avatar column, streak column), Form guide, Add player, Record game, Game history, Delete game UI, League switcher, No-leagues empty state, Static product name |
 | `player.spec.js` | 29 | Hero section (incl. avatar), Stats grid, Badges, Streaks, Results history, Rival & Nemesis cards, Claim Player, 404 |
 | `records.spec.js` | 20 | Layout, All 7 record cards, Holder links, Biggest Upset, Active Streak, Empty state |
 
@@ -266,6 +267,7 @@ All game/player routes accept a `?league=` query parameter (defaults to `pool`).
 | `GET` | `/api/auth/memberships` | Map of `{ leagueSlug: playerId }` for the signed-in user |
 | `GET` | `/api/users/:id/profile` | Get a user's profile — avatar, name, sign-up date, and stats for every league they're in |
 | `GET` | `/api/users/:id/avatar` | Get a user's avatar (JPEG if uploaded, SVG initials otherwise) |
+| `POST` | `/api/users/:id/avatar` | Upload your own avatar (multipart `avatar` field, max 5 MB — own profile only) |
 | `GET` | `/api/leagues` | List all leagues |
 | `POST` | `/api/leagues` | Create a new league `{ name }` |
 | `POST` | `/api/leagues/:league/join` | Signed-in user joins a league (creates their player) |

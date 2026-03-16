@@ -28,12 +28,6 @@
 
 <div class="layout">
 
-  <!-- Join League banner (shown when logged in but not yet a member) -->
-  <div class="card join-banner" id="join-banner" style="display:none">
-    <span class="join-text">You're not in this league yet.</span>
-    <button class="btn" id="join-btn" onclick="joinLeague()">Join League</button>
-    <div class="msg" id="join-msg"></div>
-  </div>
 
   <!-- No leagues message (shown when there are no leagues) -->
   <div class="card" id="no-leagues-card" style="display:none">
@@ -45,6 +39,12 @@
     <div class="league-card-header">
       <h2><span class="icon">🏆</span> <span id="league-table-title">Pool</span> League Table</h2>
       <a class="nav-link" href="/records.html">🏅 Records</a>
+    </div>
+    <!-- Join League banner (shown when logged in but not yet a member) -->
+    <div class="join-banner" id="join-banner" style="display:none">
+      <span class="join-text">You're not in this league yet.</span>
+      <button class="btn" id="join-btn" onclick="joinLeague()">Join League</button>
+      <div class="msg" id="join-msg"></div>
     </div>
     <div id="league-table-wrap">
       <div class="empty-state"><span class="spinner"></span></div>
