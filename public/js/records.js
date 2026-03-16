@@ -86,7 +86,7 @@ function render(d, league) {
       icon: '👑',
       title: 'Defend the Hill',
       value: d.defendTheHill.value
-        ? `${d.defendTheHill.value} Win${d.defendTheHill.value !== 1 ? 's' : ''}`
+        ? `${d.defendTheHill.value} Defence${d.defendTheHill.value !== 1 ? 's' : ''}`
         : '—',
       valueClass: 'accent',
       holder: playerLinks(d.defendTheHill.holders, league)

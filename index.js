@@ -425,18 +425,19 @@ function computeRecordMaps(players, games) {
     const defendBest = {};
     if (games.length) {
       let kingId = games[0].winnerId;
-      let curDefend = 1;
-      defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
+      let curDefend = 0;
       for (let i = 1; i < games.length; i++) {
         const g = games[i];
         if (g.winnerId === kingId) {
+          // King won — counts as a defence
           curDefend++;
           defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
-        } else {
+        } else if (g.loserId === kingId) {
+          // King lost — crown transfers
           kingId    = g.winnerId;
-          curDefend = 1;
-          defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
+          curDefend = 0;
         }
+        // else: game doesn't involve the king — ignore entirely
       }
     }
     for (const p of players) track('defendTheHill', defendBest[p.id] || 0, p.id);
@@ -880,18 +881,19 @@ app.get('/api/records', (req, res) => {
     const defendBest = {};
     if (sorted.length) {
       let kingId = sorted[0].winnerId;
-      let curDefend = 1;
-      defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
+      let curDefend = 0;
       for (let i = 1; i < sorted.length; i++) {
         const g = sorted[i];
         if (g.winnerId === kingId) {
+          // King won — counts as a defence
           curDefend++;
           defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
-        } else {
+        } else if (g.loserId === kingId) {
+          // King lost — crown transfers
           kingId    = g.winnerId;
-          curDefend = 1;
-          defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
+          curDefend = 0;
         }
+        // else: game doesn't involve the king — ignore entirely
       }
     }
     for (const player of players) addHolder(records.defendTheHill, defendBest[player.id] || 0, player);
