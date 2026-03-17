@@ -20,7 +20,7 @@ module.exports = defineConfig({
 
   // Spin up a separate test server on port 3001 so it doesn't clash with dev
   webServer: {
-    command: 'rm -rf /tmp/pool_league_test_data_v2 && TEST_PORT=3001 TEST_DATA_DIR=/tmp/pool_league_test_data_v2 node index.js',
+    command: 'rm -rf /tmp/elorate_test_data_v2 && TEST_PORT=3001 TEST_DATA_DIR=/tmp/elorate_test_data_v2 node index.js',
     port: 3001,
     reuseExistingServer: false,
     timeout: 20_000,

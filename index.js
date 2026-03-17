@@ -263,6 +263,7 @@ function replayGames(basePlayers, games) {
       id:            p.id,
       name:          p.name,
       userId:        p.userId || null,
+      joinedAt:      p.joinedAt || null,
       registeredAt:  p.registeredAt,
       rating:        typeof p.rating  === 'number' ? p.rating  : INITIAL_RATING,
       wins:          typeof p.wins    === 'number' ? p.wins    : 0,
@@ -333,8 +334,17 @@ function coldLoad(league) {
     const tail = allGames.filter(g => g.playedAt > snap.snapshotAt);
     players = replayGames(snap.players, tail);
   } else {
-    const rawPlayers = readJsonl(playersPath(league));
-    const base       = rawPlayers.map(p => ({ ...p, rating: INITIAL_RATING, wins: 0, losses: 0 }));
+    const rawRecords = readJsonl(playersPath(league));
+    // Separate real player rows from claim patches
+    const rawPlayers = rawRecords.filter(p => !p._claim);
+    const claimPatch = rawRecords.filter(p =>  p._claim);
+    // Apply claim patches onto base players before replay so userId/joinedAt are set
+    const base = rawPlayers.map(p => {
+      const patch = claimPatch.find(c => c.id === p.id);
+      return patch
+        ? { ...p, userId: patch.userId, joinedAt: patch.claimedAt, rating: INITIAL_RATING, wins: 0, losses: 0 }
+        : { ...p, rating: INITIAL_RATING, wins: 0, losses: 0 };
+    });
     players = replayGames(base, allGames);
   }
 
@@ -681,16 +691,25 @@ app.post('/api/leagues/:league/join', (req, res) => {
   const { players } = getCache(league);
 
   // Already a member?
-  if (players.find(p => p.userId === user.id)) {
-    return res.status(400).json({ error: 'You are already in this league' });
+  const existingMember = players.find(p => p.userId === user.id);
+  if (existingMember) {
+    if (existingMember.joinedAt) {
+      // Explicitly joined before — reject as duplicate
+      return res.status(400).json({ error: 'You are already in this league' });
+    }
+    // Player was auto-linked via POST /api/players — treat as auto-claim on join
+    existingMember.joinedAt = new Date().toISOString();
+    appendJsonl(playersPath(league), { _claim: true, id: existingMember.id, userId: user.id, claimedAt: existingMember.joinedAt });
+    return res.status(200).json({ ...existingMember, autoClaimed: true });
   }
 
   // Auto-claim an unclaimed guest with the same name rather than creating a duplicate
   const nameLower   = user.name.trim().toLowerCase();
   const guestPlayer = players.find(p => !p.userId && p.name.trim().toLowerCase() === nameLower);
   if (guestPlayer) {
-    guestPlayer.userId = user.id;
-    appendJsonl(playersPath(league), { _claim: true, id: guestPlayer.id, userId: user.id, claimedAt: new Date().toISOString() });
+    guestPlayer.userId   = user.id;
+    guestPlayer.joinedAt = new Date().toISOString();
+    appendJsonl(playersPath(league), { _claim: true, id: guestPlayer.id, userId: user.id, claimedAt: guestPlayer.joinedAt });
     return res.status(200).json({ ...guestPlayer, autoClaimed: true });
   }
 
@@ -698,6 +717,7 @@ app.post('/api/leagues/:league/join', (req, res) => {
     id:            `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     name:          user.name,
     userId:        user.id,
+    joinedAt:      new Date().toISOString(),
     registeredAt:  new Date().toISOString(),
     rating:        INITIAL_RATING,
     wins:          0,
@@ -708,7 +728,7 @@ app.post('/api/leagues/:league/join', (req, res) => {
     beatTop:       false,
   };
 
-  appendJsonl(playersPath(league), { id: player.id, name: player.name, userId: player.userId, registeredAt: player.registeredAt });
+  appendJsonl(playersPath(league), { id: player.id, name: player.name, userId: player.userId, joinedAt: player.joinedAt, registeredAt: player.registeredAt });
   players.push(player);
 
   res.status(201).json(player);
