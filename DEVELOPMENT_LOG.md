@@ -1,12 +1,12 @@
-# 🎱 League Tracker — Development Log
+# 🎱 Elorate — Development Log
 
-A summary of design and implementation decisions made during the development of the League Tracker application.
+A summary of design and implementation decisions made during the development of the Elorate application.
 
 ---
 
 ## Project Origin
 
-The project started as a **Pool league tracker** (`pool_league`) — a simple local web app to track player ELO ratings and game results. It was built with Node.js/Express on the backend and vanilla HTML/CSS/JS on the frontend, with data stored in a JSON file.
+The project started as a **Pool league tracker** (`pool_league`) — a simple local web app to track player ELO ratings and game results. It was built with Node.js/Express on the backend and vanilla HTML/CSS/JS on the frontend, with data stored in a JSON file. The project has since been renamed to **Elorate**.
 
 ---
 
@@ -15,6 +15,7 @@ The project started as a **Pool league tracker** (`pool_league`) — a simple lo
 ### 1. Project Naming & Configuration
 - **Issue:** The project appeared in JetBrains WebStorm as `elorateai` in square brackets beside the project name `pool_league`. This was because the `name` field in `package.json` was set to `elorateai`.
 - **Decision:** Updated the `name` field in `package.json` to `pool_league` to match the actual project folder name.
+- **Later update:** The project was renamed to **Elorate** — `package.json` `name` updated to `elorate` and the folder renamed to `elorate/` to match.
 
 ---
 
@@ -125,7 +126,7 @@ A badges/achievements system was designed and implemented to reward player miles
 ### 9. Playwright Test Suite
 
 - **Decision:** Added a full end-to-end test suite using [Playwright](https://playwright.dev/).
-- **Approach:** Tests spin up a separate server instance on **port 3001** using a **temporary data directory** (`/tmp/pool_league_test_data`), completely isolated from real league data.
+- **Approach:** Tests spin up a separate server instance on **port 3001** using a **temporary data directory** (`/tmp/elorate_test_data`), completely isolated from real league data.
 - The server supports `TEST_PORT` and `TEST_DATA_DIR` environment variables to enable this isolation without any code branching.
 - Player and game IDs were changed from `Date.now()` alone to `Date.now() + random suffix` to prevent ID collisions when multiple records are created in quick succession during tests.
 
@@ -949,7 +950,7 @@ test.beforeAll(async ({ request }) => {
 ## File Structure
 
 ```
-pool_league/
+elorate/
 ├── index.js               # Express server & all API routes
 ├── package.json
 ├── Dockerfile             # Production container image (node:22-alpine)
@@ -1536,6 +1537,26 @@ loadAuthState() → sets currentUser + memberships → updateJoinBanner()
 
 #### Fix
 Added a second call to `updateJoinBanner()` at the end of `loadLeagueSwitcher()`, after `_leagues` is populated and `showLeagueCards()` has made the cards visible. At that point both `currentUser` (from auth) and `_leagues` (from the switcher) are reliably set, so the banner correctly appears on first load for any signed-in user who isn't yet a member of the active league.
+
+---
+
+### 44. Project Renamed to Elorate
+
+#### Change
+
+The project was renamed from `pool_league` to **Elorate**.
+
+#### Files updated
+
+| File | Change |
+|------|--------|
+| `package.json` | `"name"` field updated to `"elorate"` |
+| `index.js` | Default `SESSION_SECRET` fallback updated from `pool_league_dev_secret` → `elorate_dev_secret` |
+| `README.md` | Project structure tree root updated from `pool_league/` → `elorate/` |
+| `DEVELOPMENT_LOG.md` | Title, project origin section, file structure tree, and test data directory path all updated |
+| `public/js/shared.js` | `formatLeagueName` comment example updated to use a generic slug |
+
+The project folder itself was already named `elorate/` (matching the WebStorm project name). All `pool_league` references have been removed from tracked source files.
 
 
 

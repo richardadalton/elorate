@@ -545,7 +545,7 @@ function computeH2H(player, playerGames, players) {
 
 app.use(express.json());
 app.use(session({
-  secret:            process.env.SESSION_SECRET || 'pool_league_dev_secret',
+  secret:            process.env.SESSION_SECRET || 'elorate_dev_secret',
   resave:            false,
   saveUninitialized: false,
   cookie:            { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 }, // 7 days

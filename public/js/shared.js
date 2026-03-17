@@ -9,7 +9,7 @@ function esc(str) {
     .replace(/"/g, '&quot;');
 }
 
-// "pool_league" → "Pool League"
+// "my_league" → "My League"
 function formatLeagueName(slug) {
   return slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }

@@ -175,7 +175,7 @@ League data is stored in the `./data/` directory on your machine (mounted into t
 ## Project Structure
 
 ```
-pool_league/
+elorate/
 ├── index.js               # Express server & API routes
 ├── package.json
 ├── playwright.config.js   # Playwright test configuration
