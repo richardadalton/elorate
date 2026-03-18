@@ -211,7 +211,7 @@ elorate/
     │   ├── user.css       # User profile page styles
     │   └── records.css
     └── js/
-        ├── shared.js      # Shared helpers (esc, formatLeagueName, ordinal, fmtDate, formatDate, api)
+        ├── shared.js      # Shared helpers (esc, formatLeagueName, ordinal, fmtDate, formatDate, api, wireAvatarUpload)
         ├── auth.js        # Shared auth nav (used by player.html, records.html, user.html)
         ├── index.js       # Frontend logic for main page
         ├── player.js      # Frontend logic for player profile
@@ -243,11 +243,11 @@ npm run test:ui
 npm run test:report
 ```
 
-### What's covered (197 tests)
+### What's covered (200 tests)
 
 | Suite | Tests | Covers |
 |-------|-------|--------|
-| `api.spec.js` | 111 | Leagues, Players (incl. currentStreak, auto-link on guest add), Games, Delete Game, Profile (incl. rivals, nemeses, tie-breaking), Records (incl. no-games eligibility), ELO maths, King of the Hill, Badges (incl. dynamic Record Holder, upset winner eligibility), Form guide, Biggest Upset, Active Streak, Avatars, Snapshot safety, Auth, Join League & Claim Player (**incl. auto-claim on join, collision prevention, simplified joinedAt rules**), User-scoped Avatar, **User Profile** |
+| `api.spec.js` | 114 | Leagues, Players (incl. currentStreak, auto-link on guest add), Games, Delete Game, Profile (incl. rivals, nemeses, tie-breaking), Records (incl. no-games eligibility), ELO maths, King of the Hill, Badges (incl. dynamic Record Holder, upset winner eligibility), Form guide, Biggest Upset, Active Streak, Avatars, Snapshot safety, Auth, Join League & Claim Player (**incl. auto-claim on join, collision prevention, simplified joinedAt rules**), User-scoped Avatar, **User Profile** |
 | `home.spec.js` | 37 | League table (incl. avatar column, streak column), Form guide, Add player, Record game, Game history, Delete game UI, League switcher, No-leagues empty state, Static product name |
 | `player.spec.js` | 29 | Hero section (incl. avatar), Stats grid, Badges, Streaks, Results history, Rival & Nemesis cards, Claim Player, 404 |
 | `records.spec.js` | 20 | Layout, All 7 record cards, Holder links, Biggest Upset, Active Streak, Empty state |

@@ -1604,5 +1604,63 @@ The project was renamed from `pool_league` to **Elorate**.
 
 The project folder itself was already named `elorate/` (matching the WebStorm project name). All `pool_league` references have been removed from tracked source files.
 
+---
+
+## 2026-03-18 — Code quality refactoring
+
+A review identified several code smells, redundant logic, and copy-pasted blocks. All were fixed in a single pass. All 200 tests continue to pass.
+
+### Fixes
+
+#### Dead code removed — `coldLoad` claim-patching block
+
+`readJsonl` already applies `_claim` patch entries and filters them out of its return value. The `coldLoad` no-snapshot path was splitting `rawRecords` into `rawPlayers` / `claimPatch` and re-applying patches that could never be present — dead code that was never reachable. Simplified to a direct `.map()`.
+
+#### Duplicated "Defend the Hill" logic removed — `GET /api/records`
+
+The records route had its own full re-implementation of the record-tracking logic (complete with its own inner `addHolder` function and a redundant `.sort()` of an already-chronological list). It now calls `computeRecordMaps` and translates the result, removing ~50 lines of parallel code.
+
+#### `computeBiggestUpsetHolder` promoted into `computeRecordMaps`
+
+`computeBadges` accepted a pre-computed `recHolders` object to avoid double-scanning — but then called `computeBiggestUpsetHolder(allPlayers)` internally anyway, re-scanning all players on every badge call. `computeRecordMaps` now returns `biggestUpsetHolderId` alongside `recHolders`, and `computeBadges` accepts it as a parameter. All callers updated.
+
+#### Duplicated avatar SVG generation extracted → `generateAvatarSvg(name, colourKey)`
+
+The SVG initials fallback block (colour array, colour picker, SVG template) was copy-pasted verbatim into both `GET /api/players/:id/avatar` and `GET /api/users/:id/avatar`. Extracted into a single helper.
+
+#### Duplicated avatar save logic extracted → `saveAvatar(buffer, savePath)`
+
+The `sharp().resize().jpeg().toFile()` pipeline and directory-creation guard were copy-pasted into both `POST /api/players/:id/avatar` and `POST /api/users/:id/avatar`. Extracted into a single async helper.
+
+#### `POST /api/leagues/:league/join` — use `resolveLeague`
+
+Every other route used `resolveLeague(req, res)` for league validation. This route called `validLeague` and `leagueExists` directly, duplicating the checks and diverging from the pattern. `resolveLeague` now accepts an optional override so path-parameter routes can share the same validation path.
+
+#### `replayGames` — O(players × games) `Math.max` replaced with a running variable
+
+`Math.max(...[...state.values()].map(p => p.rating))` was called inside the game loop — O(n) per game. Replaced with a `topRating` variable initialised before the loop and updated incrementally after each game (only the winner's rating can increase).
+
+#### Duplicated avatar upload handler extracted → `wireAvatarUpload` in `shared.js`
+
+`player.js` and `user.js` both contained nearly identical `fileInput.addEventListener('change', ...)` handlers (~20 lines each). Extracted into `wireAvatarUpload(inputSelector, wrapSelector, imgSelector, getUrl, onSuccess)` in `shared.js`. Both pages now call it with their specific selectors and URL builder.
+
+#### Minor fixes
+
+| Item | Fix |
+|------|-----|
+| `playerName(players, id)` | Replaced `(find(...) \|\| { name: 'Unknown' }).name` with `find(...)?.name ?? 'Unknown'` |
+| `ensureLeagueDir` | Removed redundant `existsSync` guards on directory creation — `mkdirSync` with `{ recursive: true }` is already a no-op when the dir exists |
+| `setMsg` in `public/js/index.js` | Removed dead `if (text)` guard before `setTimeout` — `setMsg` is never called with an empty string |
+
+### Files changed
+
+| File | Changes |
+|------|---------|
+| `index.js` | `coldLoad`, `replayGames`, `computeRecordMaps`, `computeBadges`, `resolveLeague`, `ensureLeagueDir`, `playerName`, `GET /api/records`, `POST /api/leagues/:league/join`, both avatar GET routes, both avatar POST routes |
+| `public/js/shared.js` | Added `wireAvatarUpload` |
+| `public/js/player.js` | Avatar upload handler replaced with `wireAvatarUpload` call |
+| `public/js/user.js` | Avatar upload handler replaced with `wireAvatarUpload` call |
+| `public/js/index.js` | `setMsg` — removed dead guard |
+
 
 
