@@ -198,33 +198,18 @@ function renderProfile(p, league, isOwner = false) {
 
 
   // Wire up avatar upload — only present when the user owns this player
-  const avatarInput = document.querySelector('.avatar-file-input');
-  if (avatarInput) {
-    avatarInput.addEventListener('change', async function () {
-      if (!this.files[0]) return;
-      const formData = new FormData();
-      formData.append('avatar', this.files[0]);
-      const wrap = document.querySelector('.hero-avatar-wrap');
-      wrap.classList.add('uploading');
-      try {
-        const r = await fetch(`/api/players/${this.dataset.id}/avatar?league=${this.dataset.league}`, {
-          method: 'POST', body: formData
-        });
-        if (!r.ok) throw new Error((await r.json()).error || 'Upload failed');
-        const { avatarUrl } = await r.json();
-        document.querySelector('.hero-avatar').src = avatarUrl;
-        // Also refresh league table avatars if any
-        document.querySelectorAll(`.league-avatar[data-id="${this.dataset.id}"]`).forEach(img => {
-          img.src = avatarUrl;
-        });
-      } catch (e) {
-        alert('Upload failed: ' + e.message);
-      } finally {
-        wrap.classList.remove('uploading');
-        this.value = '';
-      }
-    });
-  }
+  wireAvatarUpload(
+    '.avatar-file-input',
+    '.hero-avatar-wrap',
+    '.hero-avatar',
+    d => `/api/players/${d.id}/avatar?league=${d.league}`,
+    (avatarUrl, d) => {
+      // Also refresh any matching avatar in the league table
+      document.querySelectorAll(`.league-avatar[data-id="${d.id}"]`).forEach(img => {
+        img.src = avatarUrl;
+      });
+    }
+  );
 }
 
 

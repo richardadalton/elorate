@@ -44,3 +44,35 @@ async function api(method, path, body) {
   return data;
 }
 
+/**
+ * Wire up a file-input avatar uploader.
+ *   inputSelector  — querySelector for the <input type="file">
+ *   wrapSelector   — querySelector for the loading-overlay wrapper
+ *   imgSelector    — querySelector for the <img> to refresh after upload
+ *   getUrl(dataset)— function returning the POST URL, receives input.dataset
+ *   onSuccess(avatarUrl, dataset) — optional callback after a successful upload
+ */
+function wireAvatarUpload(inputSelector, wrapSelector, imgSelector, getUrl, onSuccess) {
+  const fileInput = document.querySelector(inputSelector);
+  if (!fileInput) return;
+  fileInput.addEventListener('change', async function () {
+    if (!this.files[0]) return;
+    const formData = new FormData();
+    formData.append('avatar', this.files[0]);
+    const wrap = document.querySelector(wrapSelector);
+    if (wrap) wrap.classList.add('uploading');
+    try {
+      const r = await fetch(getUrl(this.dataset), { method: 'POST', body: formData });
+      if (!r.ok) throw new Error((await r.json()).error || 'Upload failed');
+      const { avatarUrl } = await r.json();
+      document.querySelector(imgSelector).src = avatarUrl;
+      if (onSuccess) onSuccess(avatarUrl, this.dataset);
+    } catch (e) {
+      alert('Upload failed: ' + e.message);
+    } finally {
+      if (wrap) wrap.classList.remove('uploading');
+      this.value = '';
+    }
+  });
+}
+

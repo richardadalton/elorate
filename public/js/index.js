@@ -35,7 +35,7 @@ function setMsg(id, text, isErr) {
   const el = document.getElementById(id);
   el.textContent = text;
   el.className = 'msg ' + (isErr ? 'err' : 'ok');
-  if (text) setTimeout(() => { el.textContent = ''; el.className = 'msg'; }, 3500);
+  setTimeout(() => { el.textContent = ''; el.className = 'msg'; }, 3500);
 }
 
 

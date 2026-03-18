@@ -69,10 +69,8 @@ function snapshotsDir(league) {
 }
 
 function ensureLeagueDir(league) {
-  const dir = leagueDir(league);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const sd = snapshotsDir(league);
-  if (!fs.existsSync(sd)) fs.mkdirSync(sd, { recursive: true });
+  fs.mkdirSync(leagueDir(league),      { recursive: true });
+  fs.mkdirSync(snapshotsDir(league),   { recursive: true });
   if (!fs.existsSync(playersPath(league))) fs.writeFileSync(playersPath(league), '');
   if (!fs.existsSync(gamesPath(league)))   fs.writeFileSync(gamesPath(league),   '');
 }
@@ -100,7 +98,7 @@ function resolveAvatarPath(player, league) {
 
 /** Look up a player's name by id, falling back to 'Unknown'. */
 function playerName(players, id) {
-  return (players.find(p => p.id === id) || { name: 'Unknown' }).name;
+  return players.find(p => p.id === id)?.name ?? 'Unknown';
 }
 
 /** Read all JSON lines from a file, skipping blank lines. */
@@ -275,6 +273,10 @@ function replayGames(basePlayers, games) {
     });
   }
 
+  // Track the current top rating as a running value to avoid O(n) spread per game
+  let topRating = 0;
+  for (const p of state.values()) if (p.rating > topRating) topRating = p.rating;
+
   for (const g of games) {
     const w = state.get(g.winnerId);
     const l = state.get(g.loserId);
@@ -283,7 +285,6 @@ function replayGames(basePlayers, games) {
     const { newWinnerRating, newLoserRating } = calcElo(w.rating, l.rating);
 
     // Beat the top-rated player — check before advancing ratings
-    const topRating = Math.max(...[...state.values()].map(p => p.rating));
     if (l.rating >= topRating) w.beatTop = true;
 
     // Biggest upset — track on the winner
@@ -301,6 +302,9 @@ function replayGames(basePlayers, games) {
     if (w.rating < w.lowestRating)  w.lowestRating  = w.rating;
     if (l.rating > l.highestRating) l.highestRating = l.rating;
     if (l.rating < l.lowestRating)  l.lowestRating  = l.rating;
+
+    // Keep running topRating up to date (only the winner's rating can increase)
+    if (w.rating > topRating) topRating = w.rating;
   }
 
   return [...state.values()];
@@ -334,17 +338,8 @@ function coldLoad(league) {
     const tail = allGames.filter(g => g.playedAt > snap.snapshotAt);
     players = replayGames(snap.players, tail);
   } else {
-    const rawRecords = readJsonl(playersPath(league));
-    // Separate real player rows from claim patches
-    const rawPlayers = rawRecords.filter(p => !p._claim);
-    const claimPatch = rawRecords.filter(p =>  p._claim);
-    // Apply claim patches onto base players before replay so userId/joinedAt are set
-    const base = rawPlayers.map(p => {
-      const patch = claimPatch.find(c => c.id === p.id);
-      return patch
-        ? { ...p, userId: patch.userId, joinedAt: patch.claimedAt, rating: INITIAL_RATING, wins: 0, losses: 0 }
-        : { ...p, rating: INITIAL_RATING, wins: 0, losses: 0 };
-    });
+    const rawPlayers = readJsonl(playersPath(league));
+    const base = rawPlayers.map(p => ({ ...p, rating: INITIAL_RATING, wins: 0, losses: 0 }));
     players = replayGames(base, allGames);
   }
 
@@ -453,7 +448,7 @@ function computeRecordMaps(players, games) {
     for (const p of players) track('defendTheHill', defendBest[p.id] || 0, p.id);
   }
 
-  return { recVals, recHolders };
+  return { recVals, recHolders, biggestUpsetHolderId: computeBiggestUpsetHolder(players) };
 }
 
 // Return the player ID who holds the current biggest upset, or null if none.
@@ -470,7 +465,7 @@ function computeBiggestUpsetHolder(players) {
 
 // recHolders is passed in from the caller (already computed by computeRecordMaps)
 // so we avoid computing it twice on every profile request.
-function computeBadges(player, playerGames, allPlayers, allGames, recHolders) {
+function computeBadges(player, playerGames, allPlayers, allGames, recHolders, biggestUpsetHolderId) {
   const earned = new Set();
   const played = player.wins + player.losses;
 
@@ -483,7 +478,7 @@ function computeBadges(player, playerGames, allPlayers, allGames, recHolders) {
   if (player.beatTop) earned.add('beat_top');
 
   const holdsAny = Object.values(recHolders).some(s => s.has(player.id))
-                || computeBiggestUpsetHolder(allPlayers) === player.id;
+                || biggestUpsetHolderId === player.id;
   const holdsAll = Object.values(recHolders).every(s => s.size === 1 && s.has(player.id));
   if (holdsAny) earned.add('achieve_record');
   if (holdsAll) earned.add('all_records');
@@ -637,8 +632,8 @@ app.post('/api/leagues', (req, res) => {
 
 // ── Helper: resolve & validate ?league= param ─────────────────────────────────
 
-function resolveLeague(req, res) {
-  const league = (req.query.league || 'pool').toLowerCase();
+function resolveLeague(req, res, leagueOverride) {
+  const league = (leagueOverride || req.query.league || 'pool').toLowerCase();
   if (!validLeague(league))  { res.status(400).json({ error: 'Invalid league' });    return null; }
   if (!leagueExists(league)) { res.status(404).json({ error: 'League not found' }); return null; }
   return league;
@@ -680,9 +675,8 @@ app.get('/api/players', (req, res) => {
 app.post('/api/leagues/:league/join', (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
 
-  const league = req.params.league.toLowerCase();
-  if (!validLeague(league))  return res.status(400).json({ error: 'Invalid league' });
-  if (!leagueExists(league)) return res.status(404).json({ error: 'League not found' });
+  const league = resolveLeague(req, res, req.params.league);
+  if (!league) return;
 
   const users = readUsers();
   const user  = users.find(u => u.id === req.session.userId);
@@ -821,7 +815,7 @@ app.get('/api/players/:id/profile', (req, res) => {
   const streaks = computePlayerStreaks(player.id, playerGames);
   const results = computeProfileResults(player, playerGames, players);
   const { rivals, nemeses } = computeH2H(player, playerGames, players);
-  const { recHolders } = computeRecordMaps(players, games);
+  const { recHolders, biggestUpsetHolderId } = computeRecordMaps(players, games);
 
   // claimable: true if player has no userId AND the requesting user is logged in
   // AND the requesting user doesn't already have a player in this league
@@ -843,7 +837,7 @@ app.get('/api/players/:id/profile', (req, res) => {
     currentStreak:     streaks.currentStreak,
     highestRating:     player.highestRating,
     lowestRating:      player.lowestRating,
-    badges: computeBadges(player, playerGames, players, games, recHolders),
+    badges: computeBadges(player, playerGames, players, games, recHolders, biggestUpsetHolderId),
     rivals, nemeses,
   });
 });
@@ -855,69 +849,21 @@ app.get('/api/records', (req, res) => {
   if (!league) return;
   const { players, games } = getCache(league);
 
-  const records = {
-    longestWinStreak:       { value: 0, holders: [] },
-    longestActiveWinStreak: { value: 0, holders: [] },
-    mostGamesPlayed:        { value: 0, holders: [] },
-    mostGamesWon:           { value: 0, holders: [] },
-    highestEloRating:       { value: 0, holders: [] },
-    defendTheHill:          { value: 0, holders: [] },
-    biggestUpset: { ratingDiff: 0, winnerId: null, winnerName: null, loserId: null, loserName: null },
-  };
+  const { recVals, recHolders } = computeRecordMaps(players, games);
 
-  function addHolder(record, value, player) {
-    if (value > record.value) {
-      record.value   = value;
-      record.holders = [{ id: player.id, name: player.name }];
-    } else if (value === record.value && value > 0) {
-      record.holders.push({ id: player.id, name: player.name });
-    }
-  }
-
-  for (const player of players) {
-    const pg = games.filter(g => g.winnerId === player.id || g.loserId === player.id);
-    if (pg.length === 0) continue;
-
-    addHolder(records.mostGamesPlayed, player.wins + player.losses, player);
-    addHolder(records.mostGamesWon,    player.wins,                 player);
-
-    const { longestWinStreak, activeWinStreak } = computePlayerStreaks(player.id, pg);
-    addHolder(records.highestEloRating,       player.highestRating, player);
-    addHolder(records.longestWinStreak,       longestWinStreak,     player);
-    addHolder(records.longestActiveWinStreak, activeWinStreak,      player);
-  }
-
-  // Defend the Hill
-  {
-    const sorted = [...games].sort((a, b) => a.playedAt.localeCompare(b.playedAt));
-    const defendBest = {};
-    if (sorted.length) {
-      let kingId = sorted[0].winnerId;
-      let curDefend = 0;
-      for (let i = 1; i < sorted.length; i++) {
-        const g = sorted[i];
-        if (g.winnerId === kingId) {
-          // King won — counts as a defence
-          curDefend++;
-          defendBest[kingId] = Math.max(defendBest[kingId] || 0, curDefend);
-        } else if (g.loserId === kingId) {
-          // King lost — crown transfers
-          kingId    = g.winnerId;
-          curDefend = 0;
-        }
-        // else: game doesn't involve the king — ignore entirely
-      }
-    }
-    for (const player of players) addHolder(records.defendTheHill, defendBest[player.id] || 0, player);
+  // Translate Set<id> → [{ id, name }] for the response
+  function toHolders(set) {
+    return [...set].map(id => ({ id, name: playerName(players, id) }));
   }
 
   // Biggest upset — read from player aggregates computed during replay
+  let biggestUpset = { ratingDiff: 0, winnerId: null, winnerName: null, loserId: null, loserName: null };
   for (const player of players) {
     if (!player.biggestUpset) continue;
     if (player.wins + player.losses === 0) continue;
     const { diff, opponentId } = player.biggestUpset;
-    if (diff > records.biggestUpset.ratingDiff) {
-      records.biggestUpset = {
+    if (diff > biggestUpset.ratingDiff) {
+      biggestUpset = {
         ratingDiff: diff,
         winnerId:   player.id,
         winnerName: player.name,
@@ -927,7 +873,15 @@ app.get('/api/records', (req, res) => {
     }
   }
 
-  res.json(records);
+  res.json({
+    longestWinStreak:       { value: recVals.longestWinStreak,       holders: toHolders(recHolders.longestWinStreak) },
+    longestActiveWinStreak: { value: recVals.longestActiveWinStreak, holders: toHolders(recHolders.longestActiveWinStreak) },
+    mostGamesPlayed:        { value: recVals.mostGamesPlayed,        holders: toHolders(recHolders.mostGamesPlayed) },
+    mostGamesWon:           { value: recVals.mostGamesWon,           holders: toHolders(recHolders.mostGamesWon) },
+    highestEloRating:       { value: recVals.highestEloRating,       holders: toHolders(recHolders.highestEloRating) },
+    defendTheHill:          { value: recVals.defendTheHill,          holders: toHolders(recHolders.defendTheHill) },
+    biggestUpset,
+  });
 });
 
 // ── Games ──────────────────────────────────────────────────────────────────���──
@@ -1043,8 +997,8 @@ app.get('/api/users/:id/profile', (req, res) => {
     const total       = player.wins + player.losses;
     const form        = playerGames.slice(-5).map(g => g.winnerId === player.id ? 'W' : 'L');
     const { currentStreak } = computePlayerStreaks(player.id, playerGames);
-    const { recHolders }    = computeRecordMaps(players, games);
-    const badges            = computeBadges(player, playerGames, players, games, recHolders);
+    const { recHolders, biggestUpsetHolderId } = computeRecordMaps(players, games);
+    const badges            = computeBadges(player, playerGames, players, games, recHolders, biggestUpsetHolderId);
 
     leagueStats.push({
       league,
@@ -1082,22 +1036,37 @@ app.get('/api/users/:id/avatar', (req, res) => {
     return fs.createReadStream(file).pipe(res);
   }
 
-  const initials = user
-    ? user.name.trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0, 2).join('')
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(generateAvatarSvg(user?.name ?? null, req.params.id));
+});
+
+
+// ── Avatar helpers ────────────────────────────────────────────────────────────
+
+/** Generate an SVG with coloured circle + initials as a fallback avatar. */
+function generateAvatarSvg(name, colourKey) {
+  const initials = name
+    ? name.trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0, 2).join('')
     : '?';
-  const colourKey = req.params.id;
-  const colours = ['#16a34a','#0d9488','#2563eb','#7c3aed','#c2410c','#b45309'];
+  const colours = ['#16a34a', '#0d9488', '#2563eb', '#7c3aed', '#c2410c', '#b45309'];
   const colour  = colours[colourKey.charCodeAt(0) % colours.length];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
     <circle cx="100" cy="100" r="100" fill="${colour}"/>
     <text x="100" y="100" font-family="system-ui,sans-serif" font-size="80"
           font-weight="700" fill="white" text-anchor="middle" dominant-baseline="central">${initials}</text>
   </svg>`;
-  res.setHeader('Content-Type', 'image/svg+xml');
-  res.setHeader('Cache-Control', 'no-store');
-  res.send(svg);
-});
+}
 
+/** Resize an image buffer to a 200×200 JPEG and save it to disk. */
+async function saveAvatar(buffer, savePath) {
+  const dir = path.dirname(savePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  await sharp(buffer)
+    .resize(200, 200, { fit: 'cover', position: 'centre' })
+    .jpeg({ quality: 85 })
+    .toFile(savePath);
+}
 
 // ── Avatar routes ─────────────────────────────────────────────────────────────
 
@@ -1130,22 +1099,9 @@ app.get('/api/players/:id/avatar', (req, res) => {
 
   // No avatar — generate SVG initials; use userId for colour so it's consistent across leagues
   const colourKey = (player && player.userId) ? player.userId : id;
-  const initials  = player
-    ? player.name.trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0, 2).join('')
-    : '?';
-
-  const colours = ['#16a34a','#0d9488','#2563eb','#7c3aed','#c2410c','#b45309'];
-  const colour  = colours[colourKey.charCodeAt(0) % colours.length];
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
-    <circle cx="100" cy="100" r="100" fill="${colour}"/>
-    <text x="100" y="100" font-family="system-ui,sans-serif" font-size="80"
-          font-weight="700" fill="white" text-anchor="middle" dominant-baseline="central">${initials}</text>
-  </svg>`;
-
   res.setHeader('Content-Type', 'image/svg+xml');
   res.setHeader('Cache-Control', 'no-store');
-  res.send(svg);
+  res.send(generateAvatarSvg(player?.name ?? null, colourKey));
 });
 
 // POST /api/players/:id/avatar?league=pool — upload, resize to 200×200, save as JPEG
@@ -1168,16 +1124,7 @@ app.post('/api/players/:id/avatar', upload.single('avatar'), async (req, res) =>
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   try {
-    // Save to user-level path if the player is linked to a user, else per-player path
-    const savePath = resolveAvatarPath(player, league);
-    const saveDir  = path.dirname(savePath);
-    if (!fs.existsSync(saveDir)) fs.mkdirSync(saveDir, { recursive: true });
-
-    await sharp(req.file.buffer)
-      .resize(200, 200, { fit: 'cover', position: 'centre' })
-      .jpeg({ quality: 85 })
-      .toFile(savePath);
-
+    await saveAvatar(req.file.buffer, resolveAvatarPath(player, league));
     res.json({ avatarUrl: `/api/players/${id}/avatar?league=${league}&v=${Date.now()}` });
   } catch (e) {
     console.error('Avatar upload error:', e);
@@ -1192,15 +1139,7 @@ app.post('/api/users/:id/avatar', upload.single('avatar'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   try {
-    const dir = userAvatarsDir();
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const savePath = userAvatarPath(req.params.id);
-
-    await sharp(req.file.buffer)
-      .resize(200, 200, { fit: 'cover', position: 'centre' })
-      .jpeg({ quality: 85 })
-      .toFile(savePath);
-
+    await saveAvatar(req.file.buffer, userAvatarPath(req.params.id));
     res.json({ avatarUrl: `/api/users/${req.params.id}/avatar?v=${Date.now()}` });
   } catch (e) {
     console.error('User avatar upload error:', e);

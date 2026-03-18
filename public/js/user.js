@@ -54,29 +54,12 @@ function renderProfile(user, isOwner) {
     </div>`;
 
   // Wire up avatar upload (only rendered when isOwner)
-  const fileInput = document.querySelector('.avatar-file-input');
-  if (fileInput) {
-    fileInput.addEventListener('change', async function () {
-      if (!this.files[0]) return;
-      const formData = new FormData();
-      formData.append('avatar', this.files[0]);
-      const wrap = document.querySelector('.user-avatar-wrap');
-      wrap.classList.add('uploading');
-      try {
-        const r = await fetch(`/api/users/${this.dataset.id}/avatar`, {
-          method: 'POST', body: formData,
-        });
-        if (!r.ok) throw new Error((await r.json()).error || 'Upload failed');
-        const { avatarUrl: newUrl } = await r.json();
-        document.querySelector('.user-avatar').src = newUrl;
-      } catch (e) {
-        alert('Upload failed: ' + e.message);
-      } finally {
-        wrap.classList.remove('uploading');
-        this.value = '';
-      }
-    });
-  }
+  wireAvatarUpload(
+    '.avatar-file-input',
+    '.user-avatar-wrap',
+    '.user-avatar',
+    d => `/api/users/${d.id}/avatar`
+  );
 }
 
 function renderLeagueCard(l) {
