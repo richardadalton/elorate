@@ -1,4 +1,3 @@
-
 // ── Load & render ─────────────────────────────────────────────────────────────
 
 async function load() {
@@ -11,10 +10,15 @@ async function load() {
   document.querySelector('.back-link').href = `/?league=${league}`;
 
   try {
-    const r = await fetch(`/api/players/${id}/profile?league=${league}`);
+    const [r, meRes] = await Promise.all([
+      fetch(`/api/players/${id}/profile?league=${league}`),
+      fetch('/api/auth/me'),
+    ]);
     if (!r.ok) { render404(); return; }
-    const p = await r.json();
-    renderProfile(p, league);
+    const p    = await r.json();
+    const me   = meRes.ok ? await meRes.json() : null;
+    const isOwner = me && p.userId && me.id === p.userId;
+    renderProfile(p, league, isOwner);
   } catch (e) {
     document.getElementById('root').innerHTML =
       `<div class="center">Failed to load profile.</div>`;
@@ -26,7 +30,7 @@ function render404() {
     `<div class="center">Player not found.</div>`;
 }
 
-function renderProfile(p, league) {
+function renderProfile(p, league, isOwner = false) {
   document.title = `${p.name} — Pool League`;
 
   const avatarUrl = `/api/players/${esc(p.id)}/avatar?league=${esc(league)}`;
@@ -94,11 +98,16 @@ function renderProfile(p, league) {
 
     <!-- Hero -->
     <div class="hero">
+      ${isOwner ? `
       <label class="hero-avatar-wrap" title="Click to upload photo">
         <img class="hero-avatar" src="${avatarUrl}" alt="${esc(p.name)}" />
         <div class="avatar-overlay">📷</div>
         <input type="file" accept="image/*" class="avatar-file-input" data-id="${esc(p.id)}" data-league="${esc(league)}" />
       </label>
+      ` : `
+      <div class="hero-avatar-wrap">
+        <img class="hero-avatar" src="${avatarUrl}" alt="${esc(p.name)}" />
+      </div>`}
       <div class="hero-info">
         <div class="hero-name-row">
           <div class="hero-name">${esc(p.name)}</div>
@@ -188,31 +197,34 @@ function renderProfile(p, league) {
   `;
 
 
-  // Wire up avatar upload
-  document.querySelector('.avatar-file-input').addEventListener('change', async function () {
-    if (!this.files[0]) return;
-    const formData = new FormData();
-    formData.append('avatar', this.files[0]);
-    const wrap = document.querySelector('.hero-avatar-wrap');
-    wrap.classList.add('uploading');
-    try {
-      const r = await fetch(`/api/players/${this.dataset.id}/avatar?league=${this.dataset.league}`, {
-        method: 'POST', body: formData
-      });
-      if (!r.ok) throw new Error((await r.json()).error || 'Upload failed');
-      const { avatarUrl } = await r.json();
-      document.querySelector('.hero-avatar').src = avatarUrl;
-      // Also refresh league table avatars if any
-      document.querySelectorAll(`.league-avatar[data-id="${this.dataset.id}"]`).forEach(img => {
-        img.src = avatarUrl;
-      });
-    } catch (e) {
-      alert('Upload failed: ' + e.message);
-    } finally {
-      wrap.classList.remove('uploading');
-      this.value = '';
-    }
-  });
+  // Wire up avatar upload — only present when the user owns this player
+  const avatarInput = document.querySelector('.avatar-file-input');
+  if (avatarInput) {
+    avatarInput.addEventListener('change', async function () {
+      if (!this.files[0]) return;
+      const formData = new FormData();
+      formData.append('avatar', this.files[0]);
+      const wrap = document.querySelector('.hero-avatar-wrap');
+      wrap.classList.add('uploading');
+      try {
+        const r = await fetch(`/api/players/${this.dataset.id}/avatar?league=${this.dataset.league}`, {
+          method: 'POST', body: formData
+        });
+        if (!r.ok) throw new Error((await r.json()).error || 'Upload failed');
+        const { avatarUrl } = await r.json();
+        document.querySelector('.hero-avatar').src = avatarUrl;
+        // Also refresh league table avatars if any
+        document.querySelectorAll(`.league-avatar[data-id="${this.dataset.id}"]`).forEach(img => {
+          img.src = avatarUrl;
+        });
+      } catch (e) {
+        alert('Upload failed: ' + e.message);
+      } finally {
+        wrap.classList.remove('uploading');
+        this.value = '';
+      }
+    });
+  }
 }
 
 

@@ -59,8 +59,13 @@ a.btn-sm {
   height: 88px;
   border-radius: 50%;
   flex-shrink: 0;
-  cursor: pointer;
+  cursor: default;
   display: block;
+  overflow: hidden;
+}
+
+label.hero-avatar-wrap {
+  cursor: pointer;
 }
 
 .hero-avatar {
@@ -83,6 +88,7 @@ a.btn-sm {
   font-size: 1.4rem;
   opacity: 0;
   transition: opacity 0.15s;
+  pointer-events: none;
 }
 
 .hero-avatar-wrap:hover .avatar-overlay { opacity: 1; }

@@ -832,7 +832,7 @@ app.get('/api/players/:id/profile', (req, res) => {
   const claimable = !player.userId && !!requestingUserId && !userAlreadyInLeague;
 
   res.json({
-    id: player.id, name: player.name, rating: player.rating,
+    id: player.id, name: player.name, userId: player.userId || null, rating: player.rating,
     position, totalPlayers: players.length,
     wins: player.wins, losses: player.losses, played: total,
     winPct: total ? Math.round((player.wins / total) * 100) : 0,
@@ -1150,6 +1150,8 @@ app.get('/api/players/:id/avatar', (req, res) => {
 
 // POST /api/players/:id/avatar?league=pool — upload, resize to 200×200, save as JPEG
 app.post('/api/players/:id/avatar', upload.single('avatar'), async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
+
   const league = resolveLeague(req, res);
   if (!league) return;
   const { id } = req.params;
@@ -1157,6 +1159,12 @@ app.post('/api/players/:id/avatar', upload.single('avatar'), async (req, res) =>
   const { players } = getCache(league);
   const player = players.find(p => p.id === id);
   if (!player) return res.status(404).json({ error: 'Player not found' });
+
+  // Only the linked user may upload an avatar for this player
+  if (!player.userId || player.userId !== req.session.userId) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   try {

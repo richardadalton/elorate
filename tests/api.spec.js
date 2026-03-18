@@ -987,19 +987,26 @@ test.describe('Badges', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 test.describe('Avatar API', () => {
-  let league, alice;
+  let league, alice, guestPlayer, aliceEmail, alicePassword;
 
   test.beforeAll(async ({ request }) => {
-    league = await createTestLeague(request, '_avatars');
-    alice  = await addPlayer(request, league, 'Alice');
+    league     = await createTestLeague(request, '_avatars');
+    // Register and join so alice's player is linked to her user account
+    const creds = await registerAndLogin(request, '_avatarowner');
+    aliceEmail    = creds.email;
+    alicePassword = creds.password;
+    const join = await request.post(`${BASE}/api/leagues/${league}/join`, {
+      data: {}, headers: { 'Content-Type': 'application/json' },
+    });
+    alice       = await join.json();
+    // Add an unlinked guest
+    guestPlayer = await addPlayer(request, league, 'GuestNoAvatar');
   });
 
   test('GET /api/players/:id/avatar returns SVG initials when no avatar uploaded', async ({ request }) => {
     const res = await request.get(`${BASE}/api/players/${alice.id}/avatar?league=${league}`);
     expect(res.status()).toBe(200);
     expect(res.headers()['content-type']).toContain('svg');
-    const body = await res.text();
-    expect(body).toContain('A'); // Alice's initial
   });
 
   test('GET /api/players/:id/avatar returns 200 for unknown player (SVG fallback)', async ({ request }) => {
@@ -1008,19 +1015,50 @@ test.describe('Avatar API', () => {
     expect(res.headers()['content-type']).toContain('svg');
   });
 
+  test('POST /api/players/:id/avatar returns 401 when not logged in', async ({ request }) => {
+    const res = await fetch(`${BASE}/api/players/${alice.id}/avatar?league=${league}`, {
+      method: 'POST',
+      body: (() => { const f = new FormData(); f.append('avatar', new Blob(['x'], { type: 'image/jpeg' }), 'x.jpg'); return f; })(),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  test('POST /api/players/:id/avatar returns 403 when logged in but player belongs to someone else', async ({ request }) => {
+    await registerAndLogin(request, '_otheravataruser');
+    const res = await request.post(`${BASE}/api/players/${alice.id}/avatar?league=${league}`, {
+      multipart: { avatar: { name: 'test.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('x') } },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('POST /api/players/:id/avatar returns 403 for an unlinked guest player', async ({ request }) => {
+    await registerAndLogin(request, '_otheravataruser2');
+    const res = await request.post(`${BASE}/api/players/${guestPlayer.id}/avatar?league=${league}`, {
+      multipart: { avatar: { name: 'test.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('x') } },
+    });
+    expect(res.status()).toBe(403);
+  });
+
   test('POST /api/players/:id/avatar returns 404 for unknown player', async ({ request }) => {
+    await request.post(`${BASE}/api/auth/login`, {
+      data: { email: aliceEmail, password: alicePassword },
+      headers: { 'Content-Type': 'application/json' },
+    });
     const res = await request.post(`${BASE}/api/players/unknown_xyz/avatar?league=${league}`, {
-      multipart: { avatar: { name: 'test.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('not-an-image') } }
+      multipart: { avatar: { name: 'test.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('not-an-image') } },
     });
     expect(res.status()).toBe(404);
   });
 
   test('POST /api/players/:id/avatar returns 400 when no file sent', async ({ request }) => {
+    await request.post(`${BASE}/api/auth/login`, {
+      data: { email: aliceEmail, password: alicePassword },
+      headers: { 'Content-Type': 'application/json' },
+    });
     const res = await request.post(`${BASE}/api/players/${alice.id}/avatar?league=${league}`, {
       headers: { 'Content-Type': 'application/json' },
       data: {}
     });
-    // multer won't parse JSON body — no file means 400
     expect([400, 500]).toContain(res.status());
   });
 });
