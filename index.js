@@ -117,13 +117,14 @@ function readJsonl(filePath) {
   );
 
   // Apply claims: build a map of playerId → userId from _claim events
+  // Store both userId and claimedAt so we can set joinedAt on base records
   const claims = {};
-  lines.filter(l => l._claim).forEach(l => { claims[l.id] = l.userId; });
+  lines.filter(l => l._claim).forEach(l => { claims[l.id] = { userId: l.userId, claimedAt: l.claimedAt }; });
 
   return lines
     .filter(l => !l._tombstone && !l._claim && !deleted.has(l.id))
     .map(l => {
-      if (claims[l.id]) return { ...l, userId: claims[l.id] };
+      if (claims[l.id]) return { ...l, userId: claims[l.id].userId, joinedAt: claims[l.id].claimedAt };
       return l;
     });
 }
@@ -264,7 +265,6 @@ function replayGames(basePlayers, games) {
       name:          p.name,
       userId:        p.userId || null,
       joinedAt:      p.joinedAt || null,
-      registeredAt:  p.registeredAt,
       rating:        typeof p.rating  === 'number' ? p.rating  : INITIAL_RATING,
       wins:          typeof p.wins    === 'number' ? p.wins    : 0,
       losses:        typeof p.losses  === 'number' ? p.losses  : 0,
@@ -693,14 +693,7 @@ app.post('/api/leagues/:league/join', (req, res) => {
   // Already a member?
   const existingMember = players.find(p => p.userId === user.id);
   if (existingMember) {
-    if (existingMember.joinedAt) {
-      // Explicitly joined before — reject as duplicate
-      return res.status(400).json({ error: 'You are already in this league' });
-    }
-    // Player was auto-linked via POST /api/players — treat as auto-claim on join
-    existingMember.joinedAt = new Date().toISOString();
-    appendJsonl(playersPath(league), { _claim: true, id: existingMember.id, userId: user.id, claimedAt: existingMember.joinedAt });
-    return res.status(200).json({ ...existingMember, autoClaimed: true });
+    return res.status(400).json({ error: 'You are already in this league' });
   }
 
   // Auto-claim an unclaimed guest with the same name rather than creating a duplicate
@@ -718,7 +711,6 @@ app.post('/api/leagues/:league/join', (req, res) => {
     name:          user.name,
     userId:        user.id,
     joinedAt:      new Date().toISOString(),
-    registeredAt:  new Date().toISOString(),
     rating:        INITIAL_RATING,
     wins:          0,
     losses:        0,
@@ -728,7 +720,7 @@ app.post('/api/leagues/:league/join', (req, res) => {
     beatTop:       false,
   };
 
-  appendJsonl(playersPath(league), { id: player.id, name: player.name, userId: player.userId, joinedAt: player.joinedAt, registeredAt: player.registeredAt });
+  appendJsonl(playersPath(league), { id: player.id, name: player.name, userId: player.userId, joinedAt: player.joinedAt });
   players.push(player);
 
   res.status(201).json(player);
@@ -796,7 +788,7 @@ app.post('/api/players', (req, res) => {
     id:            `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     name:          trimmed,
     userId:        linkedUserId,
-    registeredAt:  new Date().toISOString(),
+    joinedAt:      new Date().toISOString(),
     rating:        INITIAL_RATING,
     wins:          0,
     losses:        0,
@@ -806,7 +798,7 @@ app.post('/api/players', (req, res) => {
     beatTop:       false,
   };
 
-  appendJsonl(playersPath(league), { id: player.id, name: player.name, userId: player.userId, registeredAt: player.registeredAt });
+  appendJsonl(playersPath(league), { id: player.id, name: player.name, userId: player.userId, joinedAt: player.joinedAt });
   players.push(player);
 
   res.status(201).json(player);
@@ -938,7 +930,7 @@ app.get('/api/records', (req, res) => {
   res.json(records);
 });
 
-// ── Games ─────────────────────────────────────────────────────────────────────
+// ── Games ──────────────────────────────────────────────────────────────────���──
 
 app.get('/api/games', (req, res) => {
   const league = resolveLeague(req, res);

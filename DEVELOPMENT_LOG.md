@@ -1540,7 +1540,53 @@ Added a second call to `updateJoinBanner()` at the end of `loadLeagueSwitcher()`
 
 ---
 
-### 44. Project Renamed to Elorate
+### 45. Player Data Model Simplified — `registeredAt` Removed, `joinedAt` Always Set
+
+#### Problem
+
+The `players.jsonl` file had two timestamp fields:
+
+- `registeredAt` — when the player record was created in the league
+- `joinedAt` — when a user account was linked to the player (or `null` if not yet linked)
+
+`registeredAt` was redundant — the user's account creation timestamp already lives in `users.jsonl`. And `joinedAt` could be `null` for auto-linked players (guests whose name matched a registered user), which created an inconsistent state that required special handling across cold load, the join endpoint, and tests.
+
+#### Decision
+
+Simplify the player data model to a single timestamp: **`joinedAt`** — the moment the player was added to the league, regardless of how they got there.
+
+#### Four clear rules for how players enter a league
+
+| # | Scenario | Result |
+|---|----------|--------|
+| 1 | Guest added, no matching user account | Guest created with `userId: null`, `joinedAt` set |
+| 2 | Guest added, matching user account exists | Player created with `userId` set, `joinedAt` set |
+| 3 | Logged-in user clicks Join, no existing player with their name | New player created with `userId` and `joinedAt` set |
+| 4 | Logged-in user clicks Join, unlinked guest with their name exists | Guest is auto-claimed: `userId` and `joinedAt` set via `_claim` patch |
+
+Rule 4 covers the case where a guest was added *before* the user registered. When that user later views the league and clicks Join, the system treats it as "this guest is me" and links them.
+
+#### Changes
+
+**`index.js`**
+- `POST /api/players` — always sets `joinedAt`; auto-links to a matching user if one exists (Rule 2); removed all `null`/conditional `joinedAt` logic; removed `registeredAt` from the persisted record
+- `POST /api/leagues/:league/join` — removed the old "already linked but not yet joined" path; simplified to: reject if already a member (400), auto-claim unlinked guest with same name (Rule 4), or create new player (Rule 3)
+- `replayGames` — removed `registeredAt` from the state map
+- No `_autoLinked` or `joinedVia` markers needed — the four rules are sufficient without tracking how a link was made
+
+**`data/chess/players.jsonl`**
+- Removed `registeredAt` from existing player records
+- Fixed a `null` `joinedAt` on Sandra's record (set to the timestamp her player was created)
+
+#### Tests updated (`api.spec.js`, `helpers.js`)
+
+| Change | Detail |
+|--------|--------|
+| `helpers.js` — `registerAndLogin` now accepts optional `customName` | Needed so a user can be registered with a specific display name |
+| Test: *joining a league auto-claims a guest with the same name* | Rewritten to correctly test Rule 4 — guest is added **before** the user registers, so no auto-link fires at add time; when the user joins, the unlinked guest is auto-claimed |
+
+---
+
 
 #### Change
 

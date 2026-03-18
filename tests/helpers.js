@@ -58,11 +58,11 @@ async function recordGame(request, league, winnerId, loserId) {
  *   await page.goto(`${BASE}/?league=${league}`);
  *   // page is now logged in
  */
-async function registerAndLogin(request, suffix = '') {
+async function registerAndLogin(request, suffix = '', customName = null) {
   const ts    = Date.now().toString().slice(-8);
   const email = `test_${ts}${suffix}@test.com`;
   const password = 'testpass123';
-  const name     = `Tester_${ts}${suffix}`;
+  const name     = customName || `Tester_${ts}${suffix}`;
 
   // Register (also logs in via session)
   const res = await request.post(`${BASE}/api/auth/register`, {

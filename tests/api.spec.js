@@ -1223,11 +1223,12 @@ test.describe('Join League & Claim Player', () => {
   });
 
   test('joining a league auto-claims a guest with the same name', async ({ request }) => {
-    const creds   = await registerAndLogin(request, '_autoclaimjoin');
-    const league2  = await createTestLeague(request, '_autoclaimjoin');
-    // Add a guest with the same name as the user (but not yet linked)
-    const guest = await addPlayer(request, league2, creds.name);
-    // User joins — should auto-claim the guest rather than create a duplicate
+    const league2 = await createTestLeague(request, '_autoclaimjoin');
+    // Add a guest BEFORE the user registers — so no auto-link happens at add time
+    const guest = await addPlayer(request, league2, 'AutoClaimPlayer_x7q');
+    // Now register a user with that same display name and log in
+    const creds = await registerAndLogin(request, '_autoclaimjoin', 'AutoClaimPlayer_x7q');
+    // User joins — should auto-claim the existing guest rather than create a duplicate
     const res = await request.post(`${BASE}/api/leagues/${league2}/join`, {
       data: {}, headers: { 'Content-Type': 'application/json' },
     });

@@ -243,11 +243,11 @@ npm run test:ui
 npm run test:report
 ```
 
-### What's covered (198 tests)
+### What's covered (197 tests)
 
 | Suite | Tests | Covers |
 |-------|-------|--------|
-| `api.spec.js` | 112 | Leagues, Players (incl. currentStreak, auto-link on guest add), Games, Delete Game, Profile (incl. rivals, nemeses, tie-breaking), Records (incl. no-games eligibility), ELO maths, King of the Hill, Badges (incl. dynamic Record Holder, upset winner eligibility), Form guide, Biggest Upset, Active Streak, Avatars, Snapshot safety, Auth, Join League & Claim Player (**incl. auto-claim on join, collision prevention**), User-scoped Avatar, **User Profile** |
+| `api.spec.js` | 111 | Leagues, Players (incl. currentStreak, auto-link on guest add), Games, Delete Game, Profile (incl. rivals, nemeses, tie-breaking), Records (incl. no-games eligibility), ELO maths, King of the Hill, Badges (incl. dynamic Record Holder, upset winner eligibility), Form guide, Biggest Upset, Active Streak, Avatars, Snapshot safety, Auth, Join League & Claim Player (**incl. auto-claim on join, collision prevention, simplified joinedAt rules**), User-scoped Avatar, **User Profile** |
 | `home.spec.js` | 37 | League table (incl. avatar column, streak column), Form guide, Add player, Record game, Game history, Delete game UI, League switcher, No-leagues empty state, Static product name |
 | `player.spec.js` | 29 | Hero section (incl. avatar), Stats grid, Badges, Streaks, Results history, Rival & Nemesis cards, Claim Player, 404 |
 | `records.spec.js` | 20 | Layout, All 7 record cards, Holder links, Biggest Upset, Active Streak, Empty state |
@@ -326,6 +326,7 @@ data/
 - **In-memory cache** — each league's derived state is cached in memory after the first request. Switching between leagues never triggers a re-replay. Cache entries are updated in-place on every write.
 - **User avatars** — stored globally at `data/avatars/<userId>.jpg` so a single upload applies across all leagues. Guest players (no account) store their avatar per-league at `data/<league>/avatars/<playerId>.jpg`.
 - **Claim events** — when a user claims a guest player, a `{ _claim: true, id, userId }` line is appended to `players.jsonl`. This is replayed on cold load so the link survives restarts.
+- **Player timestamps** — each player record in `players.jsonl` has a single `joinedAt` timestamp: the moment they were added to the league. There is no separate `registeredAt` field — user account creation timestamps live in `users.jsonl`. `joinedAt` is always set, regardless of whether the player is a guest or linked to a user account.
 - **Storage location** is controlled by the `DATA_DIR` environment variable: set automatically by `fly.toml` (Fly.io volume) or `docker-compose.yml` (local volume mount); falls back to `./data` for local development.
 - A manual snapshot can be forced via `POST /api/admin/snapshot?league=pool`.
 - Back up the entire `data/` folder regularly to preserve league history.
