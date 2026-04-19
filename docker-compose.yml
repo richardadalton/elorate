@@ -2,7 +2,7 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "8000:3000"
     environment:
       # Tell the app to store league data in the mounted volume, not inside
       # the container's own filesystem (which is lost on container restart).
