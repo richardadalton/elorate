@@ -1430,3 +1430,96 @@ test.describe('User Profile API', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Defend the Hill Record
+// ─────────────────────────────────────────────────────────────────────────────
+
+test.describe('Defend the Hill Record', () => {
+  test('no games means zero value and no holders', async ({ request }) => {
+    const league = await createTestLeague(request, '_dth_nogames');
+    await addPlayer(request, league, 'Alice');
+    await addPlayer(request, league, 'Bob');
+
+    const r = await (await request.get(`${BASE}/api/records?league=${league}`)).json();
+    expect(r.defendTheHill.value).toBe(0);
+    expect(r.defendTheHill.holders).toHaveLength(0);
+  });
+
+  test('first-game winner who never defends has 0 defenses', async ({ request }) => {
+    const league = await createTestLeague(request, '_dth_zero');
+    const alice  = await addPlayer(request, league, 'Alice');
+    const bob    = await addPlayer(request, league, 'Bob');
+    await recordGame(request, league, alice.id, bob.id); // Alice is king, curDefend=0
+
+    const r = await (await request.get(`${BASE}/api/records?league=${league}`)).json();
+    expect(r.defendTheHill.value).toBe(0);
+    expect(r.defendTheHill.holders).toHaveLength(0);
+  });
+
+  test('king earns one defense per subsequent win as king', async ({ request }) => {
+    const league  = await createTestLeague(request, '_dth_basic');
+    const alice   = await addPlayer(request, league, 'Alice');
+    const bob     = await addPlayer(request, league, 'Bob');
+    const charlie = await addPlayer(request, league, 'Charlie');
+
+    await recordGame(request, league, alice.id, bob.id);     // Alice is king (0 defenses)
+    await recordGame(request, league, alice.id, charlie.id); // defense 1
+    await recordGame(request, league, alice.id, bob.id);     // defense 2
+
+    const r = await (await request.get(`${BASE}/api/records?league=${league}`)).json();
+    expect(r.defendTheHill.value).toBe(2);
+    expect(r.defendTheHill.holders).toHaveLength(1);
+    expect(r.defendTheHill.holders[0].name).toBe('Alice');
+  });
+
+  test('games not involving the king do not affect the defend count', async ({ request }) => {
+    const league  = await createTestLeague(request, '_dth_nonking');
+    const alice   = await addPlayer(request, league, 'Alice');
+    const bob     = await addPlayer(request, league, 'Bob');
+    const charlie = await addPlayer(request, league, 'Charlie');
+
+    await recordGame(request, league, alice.id, bob.id);     // Alice is king
+    await recordGame(request, league, bob.id, charlie.id);   // unrelated game — no effect
+    await recordGame(request, league, alice.id, charlie.id); // defense 1
+
+    const r = await (await request.get(`${BASE}/api/records?league=${league}`)).json();
+    expect(r.defendTheHill.value).toBe(1);
+    expect(r.defendTheHill.holders[0].name).toBe('Alice');
+  });
+
+  test('crown transfers when king loses; new king starts defending from zero', async ({ request }) => {
+    const league  = await createTestLeague(request, '_dth_transfer');
+    const alice   = await addPlayer(request, league, 'Alice');
+    const bob     = await addPlayer(request, league, 'Bob');
+    const charlie = await addPlayer(request, league, 'Charlie');
+
+    await recordGame(request, league, alice.id, bob.id);     // Alice is king
+    await recordGame(request, league, alice.id, charlie.id); // Alice defends 1
+    await recordGame(request, league, alice.id, bob.id);     // Alice defends 2
+    await recordGame(request, league, bob.id, alice.id);     // Bob takes the crown
+    await recordGame(request, league, bob.id, charlie.id);   // Bob defends 1 (less than Alice's 2)
+
+    const r = await (await request.get(`${BASE}/api/records?league=${league}`)).json();
+    expect(r.defendTheHill.value).toBe(2);
+    expect(r.defendTheHill.holders[0].name).toBe('Alice');
+  });
+
+  test("previous best is preserved when crown transfers back to original king", async ({ request }) => {
+    const league = await createTestLeague(request, '_dth_return');
+    const alice  = await addPlayer(request, league, 'Alice');
+    const bob    = await addPlayer(request, league, 'Bob');
+
+    await recordGame(request, league, alice.id, bob.id);  // Alice is king
+    await recordGame(request, league, alice.id, bob.id);  // defense 1
+    await recordGame(request, league, alice.id, bob.id);  // defense 2
+    await recordGame(request, league, bob.id, alice.id);  // Bob takes crown
+    await recordGame(request, league, alice.id, bob.id);  // Alice reclaims — starts at 0 again
+    await recordGame(request, league, alice.id, bob.id);  // Alice defends 1 in new reign
+
+    // Alice's best single reign is 2; new reign is only 1 — best is still 2
+    const r = await (await request.get(`${BASE}/api/records?league=${league}`)).json();
+    expect(r.defendTheHill.value).toBe(2);
+    expect(r.defendTheHill.holders[0].name).toBe('Alice');
+  });
+});
+
