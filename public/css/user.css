@@ -13,32 +13,6 @@
   flex-wrap: wrap;
 }
 
-.back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 0.88rem;
-  transition: color 0.15s;
-}
-.back-link:hover { color: var(--accent); }
-
-.auth-nav { display: flex; align-items: center; gap: 8px; }
-.auth-user { font-size: 0.85rem; color: var(--muted); }
-.btn-sm { padding: 5px 14px; font-size: 0.82rem; border-radius: 20px; }
-.btn-ghost {
-  background: transparent; border: 1px solid var(--border);
-  color: var(--muted); cursor: pointer;
-}
-.btn-ghost:hover { border-color: var(--accent2); color: var(--accent); }
-a.btn-sm {
-  display: inline-flex; align-items: center;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  color: #0f172a; border-radius: 20px; padding: 5px 14px;
-  font-size: 0.82rem; font-weight: 700; text-decoration: none;
-}
-
 /* ── Hero ── */
 .user-hero {
   background: var(--surface);
@@ -283,9 +257,6 @@ label.user-avatar-wrap:hover .avatar-overlay { opacity: 1; }
   font-size: 0.78rem;
   color: var(--muted);
 }
-
-/* ── Spinner / error ── */
-.center { text-align: center; padding: 60px 0; color: var(--muted); }
 
 @media (max-width: 540px) {
   .user-hero { flex-direction: column; text-align: center; align-items: center; }

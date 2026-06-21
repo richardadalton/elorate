@@ -12,6 +12,7 @@
   --text:      #dcfce7;
   --muted:     #86b898;
   --radius:    12px;
+  --dark:      #0f172a;
 }
 
 body {
@@ -22,10 +23,12 @@ body {
   padding: 24px 16px;
 }
 
+.hidden { display: none; }
+
 /* ── Spinner ── */
 .spinner {
   display: inline-block;
-  width: 16px; height: 16px;
+  width: 20px; height: 20px;
   border: 2px solid var(--border);
   border-top-color: var(--accent);
   border-radius: 50%;
@@ -41,6 +44,8 @@ body {
   font-size: 0.9rem;
 }
 
+.center { text-align: center; padding: 60px 0; color: var(--muted); }
+
 .auth-user-link {
   font-size: 0.85rem;
   color: var(--muted);
@@ -49,3 +54,45 @@ body {
 }
 .auth-user-link:hover { color: var(--accent); }
 
+/* ── Shared page header ── */
+header {
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Back link (player, records, user pages) ── */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.88rem;
+  transition: color 0.15s;
+}
+.back-link:hover { color: var(--accent); }
+
+/* ── Auth nav (shared across all pages) ── */
+.auth-nav { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.auth-user { font-size: 0.85rem; color: var(--muted); }
+.btn-sm { padding: 5px 14px; font-size: 0.82rem; border-radius: 20px; }
+.btn-ghost {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--muted); cursor: pointer;
+}
+.btn-ghost:hover { border-color: var(--accent2); color: var(--accent); }
+a.btn-sm {
+  display: inline-flex; align-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: var(--dark); border-radius: 20px; padding: 5px 14px;
+  font-size: 0.82rem; font-weight: 700; text-decoration: none;
+}

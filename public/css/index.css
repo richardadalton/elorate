@@ -1,8 +1,3 @@
-header {
-  text-align: center;
-  margin-bottom: 36px;
-}
-
 /* top row: title left, auth nav right */
 .header-top {
   display: flex;
@@ -11,34 +6,6 @@ header {
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 4px;
-}
-
-.auth-nav {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.auth-user {
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-.btn-sm {
-  padding: 5px 14px;
-  font-size: 0.82rem;
-  border-radius: 20px;
-}
-
-.btn-ghost {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--muted);
-}
-.btn-ghost:hover {
-  border-color: var(--accent2);
-  color: var(--accent);
 }
 
 /* Join League banner — sits inside the league table card */
@@ -77,15 +44,6 @@ header {
 
 .league-card-header h2 {
   margin-bottom: 0;
-}
-
-header h1 {
-  font-size: 2rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .tagline {
@@ -142,7 +100,7 @@ nav {
 .league-pill.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0f172a;
+  color: var(--dark);
 }
 .league-pill.add-league { color: var(--accent); }
 .league-pill.add-league:hover { background: var(--surface2); }
@@ -376,6 +334,8 @@ tbody td.num { text-align: right; }
   flex-wrap: wrap;
 }
 
+.form-row + .form-row { margin-top: 10px; }
+
 input[type="text"], select {
   flex: 1;
   min-width: 0;
@@ -400,7 +360,7 @@ button.btn, a.btn {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, var(--accent), var(--accent2));
-  color: #0f172a;
+  color: var(--dark);
   border: none;
   border-radius: 8px;
   padding: 10px 20px;
