@@ -1,6 +1,10 @@
 .idea/
+.DS_Store
 node_modules/
 data/
-playwright-report
-test-results
+playwright-report/
+test-results/
 deploy.sh
+deploy-demo.sh
+reset-demo.sh
+docker-compose.demo.yml
