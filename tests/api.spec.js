@@ -353,6 +353,120 @@ test.describe('Delete Game API', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Snapshot + late-joining players ('Unknown' player regression)
+// ─────────────────────────────────────────────────────────────────────────────
+
+test.describe('Snapshot with late-joining players', () => {
+  test('player added after a snapshot survives a cache rebuild', async ({ request }) => {
+    const league = await createTestLeague(request, '_latejoin');
+    const alice  = await addPlayer(request, league, 'Alice');
+    const bob    = await addPlayer(request, league, 'Bob');
+    await recordGame(request, league, alice.id, bob.id);
+
+    // Snapshot taken now — Charlie doesn't exist yet
+    await request.post(`${BASE}/api/admin/snapshot?league=${league}`);
+
+    // Charlie joins after the snapshot and loses two games
+    const charlie = await addPlayer(request, league, 'Charlie');
+    const extra   = await recordGame(request, league, alice.id, bob.id);
+    await recordGame(request, league, alice.id, charlie.id);
+    await recordGame(request, league, alice.id, charlie.id);
+
+    // Deleting a game forces a full cache rebuild (snapshot + tail replay),
+    // which used to drop players created after the snapshot
+    await request.delete(`${BASE}/api/games/${extra.id}?league=${league}`, {
+      data: { winnerName: 'Alice' },
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    // Charlie must still exist, with his games counted
+    const { players } = await (await request.get(`${BASE}/api/players?league=${league}`)).json();
+    const c = players.find(p => p.id === charlie.id);
+    expect(c).toBeTruthy();
+    expect(c.name).toBe('Charlie');
+    expect(c.losses).toBe(2);
+
+    // And no game may show an 'Unknown' player
+    const games = await (await request.get(`${BASE}/api/games?league=${league}`)).json();
+    for (const g of games) {
+      expect(g.winnerName).not.toBe('Unknown');
+      expect(g.loserName).not.toBe('Unknown');
+    }
+  });
+
+  test('player claimed after a snapshot keeps the link across a cache rebuild', async ({ request }) => {
+    const league = await createTestLeague(request, '_lateclaim');
+    const alice  = await addPlayer(request, league, 'Alice');
+    const bob    = await addPlayer(request, league, 'Bob');
+    const guest  = await addPlayer(request, league, 'LateClaimGuest');
+
+    await request.post(`${BASE}/api/admin/snapshot?league=${league}`);
+
+    // Played after the snapshot so deleting it later keeps the snapshot alive
+    const extra  = await recordGame(request, league, alice.id, bob.id);
+
+    // Claim happens after the snapshot
+    await registerAndLogin(request, '_lateclaim');
+    await request.post(`${BASE}/api/players/${guest.id}/claim?league=${league}`, {
+      data: {}, headers: { 'Content-Type': 'application/json' },
+    });
+
+    // Force a cache rebuild via game deletion
+    await request.delete(`${BASE}/api/games/${extra.id}?league=${league}`, {
+      data: { winnerName: 'Alice' },
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const { players } = await (await request.get(`${BASE}/api/players?league=${league}`)).json();
+    const claimed = players.find(p => p.id === guest.id);
+    expect(claimed).toBeTruthy();
+    expect(claimed.userId).toBeTruthy();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Torn-line crash recovery
+// ─────────────────────────────────────────────────────────────────────────────
+
+test.describe('Torn-line crash recovery', () => {
+  test('a torn line does not corrupt later appends and is skipped on reload', async ({ request }) => {
+    const fs   = require('fs');
+    const path = require('path');
+
+    const league = await createTestLeague(request, '_torn');
+    const alice  = await addPlayer(request, league, 'Alice');
+    const bob    = await addPlayer(request, league, 'Bob');
+    const g1     = await recordGame(request, league, alice.id, bob.id);
+
+    // Simulate a crash mid-append: a partial JSON fragment with no trailing newline
+    const dataDir   = process.env.TEST_DATA_DIR || '/tmp/elorate_test_data_v2';
+    const gamesFile = path.join(dataDir, league, 'games.jsonl');
+    fs.appendFileSync(gamesFile, '{"id":"torn_17826658931');
+
+    // The next append must land on its own line, not concatenate onto the fragment
+    const g2 = await recordGame(request, league, alice.id, bob.id);
+
+    // Deleting g1 forces a full reload from disk — the torn line must be
+    // skipped and everything recorded after it must survive
+    const del = await request.delete(`${BASE}/api/games/${g1.id}?league=${league}`, {
+      data: { winnerName: 'Alice' },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(del.status()).toBe(200);
+
+    const games = await (await request.get(`${BASE}/api/games?league=${league}`)).json();
+    const ids = games.map(g => g.id);
+    expect(ids).toContain(g2.id);
+    expect(ids).not.toContain(g1.id);
+
+    const { players } = await (await request.get(`${BASE}/api/players?league=${league}`)).json();
+    const a = players.find(p => p.id === alice.id);
+    expect(a.wins).toBe(1);
+    expect(a.rating).toBe(1016);
+  });
+});
+
 test.describe('Player Profile API', () => {
   let league, alice, bob, charlie;
 
