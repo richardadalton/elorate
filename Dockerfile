@@ -9,7 +9,10 @@ COPY package*.json ./
 
 # Install production dependencies only (no devDependencies / Playwright etc.)
 # sharp 0.34+ ships pre-built binaries for Alpine — no native compile step needed.
-RUN npm ci --omit=dev
+# Then remove npm itself: the app is started with `node`, so npm is never used
+# at runtime, and its bundled dependencies are a standing source of CVEs.
+RUN npm ci --omit=dev \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 # Copy the rest of the source
 COPY . .
