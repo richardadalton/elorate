@@ -17,7 +17,7 @@ While the AI wrote all the code, the direction, priorities, and many of the key 
 - **Pushing for cleaner data models** — the move to append-only JSONL files, the removal of stored ratings from the game log, and the player-aggregate approach all came from probing questions like *"Do we actually need this in the file?"* and *"How about we stop storing the impact of individual games on ratings entirely?"*
 - **Scope decisions** — choosing which features to add (badges, King of the Hill, rival/nemesis, form guide, avatars), which to remove (longest losing streak record, ELO history chart), and which to defer
 - **Identifying bugs** — spotting that the Grand Slam badge behaved inconsistently for tied records, that new players with no games were eligible for ELO records, and that avatars were attached to players rather than users
-- **Deployment decisions** — choosing Fly.io, Docker, and the volume mount approach for persistent data
+- **Deployment decisions** — choosing Docker and the volume mount approach for persistent data
 - **Design taste** — UI layout decisions, naming (Grand Slam, King of the Hill, Nemesis), and the overall aesthetic direction
 - **Knowing when to stop** — the project was deliberately kept as a lean, vanilla HTML/CSS/JS app with no frontend framework, no database, and no build step
 
@@ -327,7 +327,7 @@ data/
 - **User avatars** — stored globally at `data/avatars/<userId>.jpg` so a single upload applies across all leagues. Guest players (no account) store their avatar per-league at `data/<league>/avatars/<playerId>.jpg`.
 - **Claim events** — when a user claims a guest player, a `{ _claim: true, id, userId }` line is appended to `players.jsonl`. This is replayed on cold load so the link survives restarts.
 - **Player timestamps** — each player record in `players.jsonl` has a single `joinedAt` timestamp: the moment they were added to the league. There is no separate `registeredAt` field — user account creation timestamps live in `users.jsonl`. `joinedAt` is always set, regardless of whether the player is a guest or linked to a user account.
-- **Storage location** is controlled by the `DATA_DIR` environment variable: set automatically by `fly.toml` (Fly.io volume) or `docker-compose.yml` (local volume mount); falls back to `./data` for local development.
+- **Storage location** is controlled by the `DATA_DIR` environment variable: set automatically by `docker-compose.yml` (volume mount); falls back to `./data` for local development.
 - A manual snapshot can be forced via `POST /api/admin/snapshot?league=pool`.
 - Back up the entire `data/` folder regularly to preserve league history.
 

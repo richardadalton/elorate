@@ -22,7 +22,6 @@ EXPOSE 3000
 
 # DATA_DIR tells the app where to store league data.
 # Set this via the environment at runtime:
-#   - Fly.io:        set in fly.toml [env] → DATA_DIR=/data  (persistent volume)
 #   - Docker Compose: set in docker-compose.yml → DATA_DIR=/data (volume mount)
 #   - Local dev:     not set → defaults to ./data inside the project
 CMD ["node", "index.js"]
